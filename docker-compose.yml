@@ -1,0 +1,155 @@
+services:
+    app:
+        build:
+            context: .
+            dockerfile: ./docker/Dockerfile
+        volumes:
+            - './:/var/www'
+            - './docker/php.ini:/usr/local/etc/php/php.ini'
+            - './docker/xdebug.ini:/usr/local/etc/php/conf.d/xdebug.ini'
+        networks:
+            - saucebase
+        environment:
+            - APP_ENV=${APP_ENV:-local}
+            - APP_KEY=${APP_KEY}
+            - APP_DEBUG=${APP_DEBUG:-true}
+            - DB_CONNECTION=${DB_CONNECTION:-pgsql}
+            - DB_HOST=pgsql
+            - DB_PORT=${DB_PORT:-5432}
+            - DB_DATABASE=${DB_DATABASE}
+            - DB_USERNAME=${DB_USERNAME}
+            - DB_PASSWORD=${DB_PASSWORD}
+            - REDIS_HOST=redis
+            - REDIS_PORT=${REDIS_PORT:-6379}
+            - CACHE_DRIVER=${CACHE_DRIVER:-redis}
+            - SESSION_DRIVER=${SESSION_DRIVER:-redis}
+            - QUEUE_CONNECTION=${QUEUE_CONNECTION:-redis}
+            - MAIL_HOST=${MAIL_HOST:-mailpit}
+            - MAIL_PORT=${MAIL_PORT:-1025}
+            - XDEBUG_MODE=${XDEBUG_MODE:-debug}
+            - XDEBUG_CONFIG=${XDEBUG_CONFIG:-client_host=host.docker.internal client_port=9003}
+        depends_on:
+            pgsql:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        tty: true
+
+    nginx:
+        image: nginx:alpine
+        ports:
+            - '${APP_PORT:-80}:80'
+            - '${APP_HTTPS_PORT:-443}:443'
+        volumes:
+            - './:/var/www'
+            - './docker/nginx.conf:/etc/nginx/conf.d/default.conf'
+            - './docker/ssl:/etc/nginx/ssl:ro'
+        depends_on:
+            - app
+        networks:
+            - saucebase
+
+    pgsql:
+        # PostGIS ships the spatial libraries but enables nothing: the database
+        # behaves as plain Postgres until someone runs CREATE EXTENSION postgis.
+        # Starting here means adding geometry later is one SQL statement rather
+        # than an image swap and a restart.
+        #
+        # imresamu rather than the official postgis/postgis, which publishes no
+        # arm64 manifest and so will not run on an Apple Silicon machine. This
+        # one is multi-arch, so the same tag serves laptops and an amd64 VPS.
+        #
+        # 18 to match Laravel Cloud, whose Serverless Postgres is Neon. Neon
+        # pins extension versions per major, and 18 is where PostGIS 3.6 and
+        # pgvector 0.8.6 live -- 17 would pin production to older builds of the
+        # two extensions this project is being shaped around. Majors cannot be
+        # swapped on an existing data directory, so matching now avoids a dump
+        # and restore later.
+        image: 'imresamu/postgis:18-3.6'
+        restart: unless-stopped
+        ports:
+            - '${FORWARD_DB_PORT:-5432}:5432'
+        environment:
+            POSTGRES_DB: '${DB_DATABASE}'
+            POSTGRES_USER: '${DB_USERNAME}'
+            POSTGRES_PASSWORD: '${DB_PASSWORD}'
+        volumes:
+            # /var/lib/postgresql, not .../data: the 18+ images store data in a
+            # major-versioned subdirectory so pg_upgrade can work across a
+            # single mount. Mounting .../data makes the container refuse to
+            # start.
+            - 'saucebase-postgres:/var/lib/postgresql'
+        networks:
+            - saucebase
+        healthcheck:
+            test:
+                ['CMD-SHELL', 'pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}']
+            interval: 2s
+            retries: 5
+            timeout: 5s
+
+    redis:
+        image: 'redis:alpine'
+        restart: unless-stopped
+        ports:
+            - '${FORWARD_REDIS_PORT:-6379}:6379'
+        volumes:
+            - 'saucebase-redis:/data'
+        networks:
+            - saucebase
+        healthcheck:
+            test: ['CMD', 'redis-cli', 'ping']
+            interval: 2s
+            retries: 3
+            timeout: 5s
+
+    mailpit:
+        image: 'axllent/mailpit:latest'
+        restart: unless-stopped
+        ports:
+            - '${FORWARD_MAILPIT_PORT:-1025}:1025'
+            - '${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}:8025'
+        networks:
+            - saucebase
+    queue:
+        build:
+            context: .
+            dockerfile: ./docker/Dockerfile
+        command: php artisan queue:work --tries=3 --backoff=5
+        volumes:
+            - './:/var/www'
+        networks:
+            - saucebase
+        environment:
+            - APP_ENV=${APP_ENV:-local}
+            - APP_KEY=${APP_KEY}
+            - APP_DEBUG=${APP_DEBUG:-true}
+            - DB_CONNECTION=${DB_CONNECTION:-pgsql}
+            - DB_HOST=pgsql
+            - DB_PORT=${DB_PORT:-5432}
+            - DB_DATABASE=${DB_DATABASE}
+            - DB_USERNAME=${DB_USERNAME}
+            - DB_PASSWORD=${DB_PASSWORD}
+            - REDIS_HOST=redis
+            - REDIS_PORT=${REDIS_PORT:-6379}
+            - CACHE_DRIVER=${CACHE_DRIVER:-redis}
+            - SESSION_DRIVER=${SESSION_DRIVER:-redis}
+            - QUEUE_CONNECTION=${QUEUE_CONNECTION:-redis}
+            - MAIL_HOST=${MAIL_HOST:-mailpit}
+            - MAIL_PORT=${MAIL_PORT:-1025}
+        depends_on:
+            pgsql:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        restart: unless-stopped
+
+networks:
+    saucebase:
+        driver: bridge
+
+volumes:
+    saucebase-postgres:
+        driver: local
+    saucebase-redis:
+        driver: local

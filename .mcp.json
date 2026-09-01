@@ -1,0 +1,26 @@
+{
+    "mcpServers": {
+        "laravel-boost": {
+            "command": "php",
+            "args": ["artisan", "boost:mcp"]
+        },
+        "playwright": {
+            "command": "npx",
+            "args": ["@playwright/mcp@latest"]
+        },
+        "shadcnVue": {
+            "command": "npx",
+            "args": ["shadcn-vue@latest", "mcp"]
+        },
+        "chrome-devtools": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "chrome-devtools-mcp@latest",
+                "--categoryExperimentalWebmcp",
+                "--autoConnect",
+                "--no-usage-statistics"
+            ]
+        }
+    }
+}
