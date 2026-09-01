@@ -249,7 +249,7 @@ Framework detection is safe here: `detectFrameworkConfigFiles` matches `composer
 `target`** field. In shadcn-vue's `resolveFilePath`, a `registry:component` with no target goes to
 `config.resolvedPaths.components`, which is `resolveImport(aliases.components, tsConfig)`. This
 project's `aliases.components` is `@/components` and `tsconfig.json` maps `"@/*": ["./resources/js/*"]`,
-so **out of the box everything lands in `/Volumes/Work/dev/whatsthere/resources/js/components/ai-elements/<group>/`** —
+so **out of the box everything lands in `/Volumes/Work/dev/saucebase/chatmap-webmcp/resources/js/components/ai-elements/<group>/`** —
 not in the module. That is confirmed by `resolveNestedFilePath`, which strips the longest matching
 alias segment (`components`) from the registry path `components/ai-elements/message/Message.vue`,
 leaving `ai-elements/message/Message.vue`.
@@ -364,7 +364,7 @@ Declared npm dependencies per registry item (from the live JSON):
 `ansi-to-vue3`. **Do not install `all.json` here** — it is ~9 packages of dead weight for a generic
 chat page.
 
-Conflict check against `/Volumes/Work/dev/whatsthere/package.json`:
+Conflict check against `/Volumes/Work/dev/saucebase/chatmap-webmcp/package.json`:
 
 - **`@lucide/vue` ^1.18.0 — already installed, exact match.** This is important: the registry uses
   the v1 `@lucide/vue` package name, not the older `lucide-vue-next`. `components.json` already has
@@ -447,6 +447,6 @@ somewhere in `modules/chat/` pointing at `https://github.com/vuepont/ai-elements
 - Local: `node_modules/shadcn-vue@2.7.4/dist/registry-BZ439r4u.js` (`resolveFilePath`,
   `resolveFileTargetDirectory`, `resolveNestedFilePath`, `resolveConfigPaths`,
   `detectFrameworkConfigFiles`), `dist/schema-CjAXtlQ7.js` (`registryConfigSchema`)
-- Local: `/Volumes/Work/dev/whatsthere/{package.json,components.json,tsconfig.json}`,
+- Local: `/Volumes/Work/dev/saucebase/chatmap-webmcp/{package.json,components.json,tsconfig.json}`,
   `resources/css/app.css`, `resources/css/theme.css`,
   `resources/js/components/ui/input-group/index.ts`

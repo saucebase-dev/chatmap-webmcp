@@ -1,6 +1,6 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "whatsthere/whatsthere",
+    "name": "roble/chatmap-webmcp",
     "type": "project",
     "description": "An AI chat that answers questions about houses, locations, and what is nearby. Built on the Saucebase modular Laravel starter kit.",
     "license": "MIT",
