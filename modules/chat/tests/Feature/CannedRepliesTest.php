@@ -79,7 +79,7 @@ class CannedRepliesTest extends TestCase
 
     public function test_the_map_scenarios_hand_back_views_the_map_can_read(): void
     {
-        foreach (['place' => 'marker', 'eircode' => 'marker', 'places' => 'markers'] as $scenario => $pins) {
+        foreach (['place' => 'marker', 'places' => 'markers'] as $scenario => $pins) {
             $output = collect($this->framesFor($scenario))
                 ->firstWhere('type', 'tool-output-available')['output'];
 

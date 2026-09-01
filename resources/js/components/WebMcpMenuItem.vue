@@ -47,7 +47,7 @@ const listed = computed(() =>
 );
 
 const label = computed(() =>
-    webMcpSupported ? 'Agent tools' : 'Agent tools available',
+    webMcpSupported ? 'WebMCP tools' : 'WebMCP is available',
 );
 
 const icon = computed(() => (webMcpSupported ? IconBot : IconBotOff));

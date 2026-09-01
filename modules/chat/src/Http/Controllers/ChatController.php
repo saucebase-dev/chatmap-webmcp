@@ -14,7 +14,6 @@ use Laravel\Ai\Models\Conversation;
 use Laravel\Ai\Responses\Data\ToolResult;
 use Laravel\Ai\Tools\Request as ToolRequest;
 use Modules\Chat\Ai\ChatAgent;
-use Modules\Chat\Ai\Tools\EircodeToGeoLocation;
 use Modules\Chat\Ai\Tools\FindPlaces;
 use Modules\Chat\Ai\Tools\ShowOnMap;
 use Modules\Chat\Jobs\GenerateConversationTitle;
@@ -34,7 +33,6 @@ class ChatController
      */
     public const array MAP_TOOLS = [
         ShowOnMap::NAME,
-        EircodeToGeoLocation::NAME,
         FindPlaces::NAME,
     ];
 

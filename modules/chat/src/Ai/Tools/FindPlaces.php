@@ -69,14 +69,8 @@ class FindPlaces implements Tool
         'toilets' => '["amenity"="toilets"]',
     ];
 
-    /**
-     * How many results to put on the map.
-     *
-     * Overpass applies this itself, so an area thick with pubs costs one
-     * capped response rather than a thousand rows we then throw away. It also
-     * caps what lands in the model's context, since the tool result is context.
-     */
-    protected const LIMIT = 40;
+    /** How many results to put on the map and in the model's context. */
+    protected const LIMIT = 10;
 
     /**
      * Get the tool's name.
@@ -91,7 +85,7 @@ class FindPlaces implements Tool
      */
     public function description(): Stringable|string
     {
-        return 'Find all the places of one kind within an area of Ireland and show them on the map together, e.g. every pub in Galway or every castle in Kerry. Use this for "what is around", "where can I find", and "show me the ..." questions. For a single named place, use show_on_map instead.';
+        return 'Find up to ten places of one kind within an area and show them on the map together, e.g. pubs in Galway or castles in Bavaria. Use this for "what is around", "where can I find", and "show me the ..." questions. For a single named place, use show_on_map instead.';
     }
 
     /**
@@ -110,9 +104,7 @@ class FindPlaces implements Tool
             return 'No area was given, so the map was left where it was.';
         }
 
-        // Reuses ShowOnMap rather than geocoding again, which is also what
-        // keeps this inside Ireland: that lookup is pinned to countrycodes=ie,
-        // so an area outside it never resolves to a box to search.
+        // Reuses ShowOnMap rather than maintaining a second geocoding path.
         $bounds = $this->boundsOf($area);
 
         if ($bounds === null) {
@@ -129,21 +121,17 @@ class FindPlaces implements Tool
             return "Found no {$this->label($category)} in [{$bounds['label']}]. The map was left where it was.";
         }
 
-        // Overpass was asked for one more than the cap, so an overflow means
-        // there are others we are not showing. Saying "40" when the real answer
-        // is "at least 40" is the tool lying through the assistant.
-        $capped = count($places) > self::LIMIT;
-
-        return json_encode(array_filter([
+        return json_encode([
             'label' => ucfirst($this->label($category))." in {$bounds['label']}",
             // Named for the browser as well as the model: the step beside the
             // map would otherwise have to pluralise the raw category itself,
             // and "church" and "pharmacy" do not take a bare s.
             'category' => $this->label($category),
             'bbox' => $bounds['bbox'],
+            // Defensive as well as descriptive: even if an Overpass mirror
+            // ignores its output limit, the map and model still receive ten.
             'markers' => array_slice($places, 0, self::LIMIT),
-            'capped' => $capped,
-        ]), JSON_THROW_ON_ERROR);
+        ], JSON_THROW_ON_ERROR);
     }
 
     /**
@@ -182,7 +170,9 @@ class FindPlaces implements Tool
      */
     protected function search(string $category, array $bbox): ?array
     {
-        $key = 'overpass:'.$category.':'.md5(implode(',', $bbox));
+        // Versioned so cached forty-result payloads from the previous contract
+        // can never leak into the new top-ten response.
+        $key = 'overpass:top10:'.$category.':'.md5(implode(',', $bbox));
 
         if (($cached = Cache::get($key)) !== null) {
             return $cached;
@@ -260,13 +250,11 @@ class FindPlaces implements Tool
             (float) $east
         );
 
-        // One more than we mean to keep, which is how the caller can tell a
-        // full house from a coincidence and avoid reporting the cap as a total.
         $query = sprintf(
             '[out:json][timeout:25];nwr%s(%s);out center %d;',
             self::CATEGORIES[$category],
             $box,
-            self::LIMIT + 1
+            self::LIMIT
         );
 
         $response = Http::asForm()
@@ -302,7 +290,7 @@ class FindPlaces implements Tool
                 ->enum(array_keys(self::CATEGORIES))
                 ->required(),
             'area' => $schema->string()
-                ->description('The town, city, county or neighbourhood in Ireland to search inside, e.g. "Galway" or "Kinsale, Cork".')
+                ->description('The town, city, region, or neighbourhood to search inside, e.g. "Galway, Ireland" or "Shinjuku, Tokyo".')
                 ->required(),
         ];
     }

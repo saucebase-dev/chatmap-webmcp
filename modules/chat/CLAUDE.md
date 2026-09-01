@@ -9,7 +9,7 @@ conversations, exposed to external AI agents over WebMCP.
 | ---------- | ------------------------------------------------------------------------------------------------------ |
 | Controller | `ChatController` (index, show, messages, stream, place)                                                |
 | Agents     | `ChatAgent` (the assistant), `ConversationTitleAgent` (names conversations)                            |
-| Tools      | `Ai/Tools/` — `ShowOnMap` (geocodes one place), `EircodeToGeoLocation` (fake), `FindPlaces` (Overpass) |
+| Tools      | `Ai/Tools/` — `ShowOnMap` (geocodes one place), `FindPlaces` (up to ten Overpass results)             |
 | Jobs       | `GenerateConversationTitle`                                                                            |
 | Provider   | `ChatServiceProvider` — shares `chat.sessions` via `shareInertiaData()`                                |
 | Pages      | `Index` (the whole UI; blank or an existing conversation)                                              |
@@ -129,19 +129,18 @@ A new **body** shape is the one change costing two edits: a variant on
 
 `Laravel\Ai\Streaming\Events\ProviderToolEvent` does not override
 `toVercelProtocolArray()`, and the encoder skips events returning null. So
-`WebSearch` and the hosted `tool_search` produce **no stream parts at all** — the
-route of thought can never show a search step, and the OpenAI streaming path
+`WebSearch` produces **no stream parts at all** — the route of thought can never
+show a search step, and the OpenAI streaming path
 emits no `Citation` events either, so `source-url` parts never arrive.
 
 Only local tools implementing `Laravel\Ai\Contracts\Tool` are visible. If
 search activity ever needs to appear in the UI, it has to become a local tool.
 
-### The model is pinned, and both reasoning options are load-bearing
+### The model and both reasoning options are pinned
 
-`ChatAgent` uses `#[Model('gpt-5.4-mini')]`, not `#[UseCheapestModel]`. OpenAI
-rejects the hosted `tool_search` tool on `gpt-5.4-nano` outright (_"Tool
-'tool_search' is not supported"_), so deferred tool loading costs that bump;
-mini is the cheapest tier that accepts it.
+`ChatAgent` uses `#[Model('gpt-5.4-mini')]`, not `#[UseCheapestModel]`, so an SDK
+update cannot silently change the quality, latency, or cost of the application's
+central experience.
 
 `providerOptions()` sends `['reasoning' => ['effort' => 'low', 'summary' =>
 'auto']]`. **Both halves are required.** Without `summary` OpenAI reasons
@@ -149,29 +148,18 @@ silently; without `effort` it does not reason at all, so `summary` has nothing t
 report and the Thinking step never renders. Verified: `low` yields a few hundred
 `reasoning_summary_text.delta` frames, `medium` several times that.
 
-`ToolSearch` also throws on providers that do not support it (Gemini among
-them), and needs `store` left at its default on the OpenAI provider. If
-`config/ai.php` moves off `openai`, this feature moves with it.
+### Geographic scope is global
 
-### Ireland is the scope, in two halves
-
-The soft half is `ChatAgent::instructions()`, which tells the model to decline
-anything that is not an Irish location. The hard half is `countrycodes=ie` on
-Nominatim's `/search` in `ShowOnMap::lookup()` — a model can talk its way around
-a prompt, not around a geocoder that returns nothing.
-
-Reverse geocoding (`placeAt()`) is deliberately **not** restricted: naming
-wherever the visitor dragged the map is still the honest answer.
-
-The cache key is `geocode:ie:` so entries stored before the restriction are not
-served.
+`ChatAgent`, `ShowOnMap`, `FindPlaces`, the WebMCP place tool, and the default
+map view all cover the world. Nominatim searches carry no country filter. The
+cache key is `geocode:global:` so responses created under the former restricted
+contract are never reused accidentally.
 
 ### Finding many places at once
 
 `FindPlaces` answers "what is around here" where `ShowOnMap` answers "where is
-this". It geocodes the area through `ShowOnMap` first, which is also what keeps
-it inside Ireland for free: that lookup is pinned to `countrycodes=ie`, so an
-area outside it never resolves to a box to search.
+this". It geocodes the area through `ShowOnMap` first so there remains one place
+where a free-text name becomes a bounding box.
 
 **The model does not write the query.** `FindPlaces::CATEGORIES` is an
 allow-list of OpenStreetMap tag filters, and the schema exposes its keys as an
@@ -180,12 +168,8 @@ interpolated are bounding-box floats. A `filter` parameter the model composed
 itself would be an injection surface aimed at somebody else's donated server.
 Adding a category is one line in that array.
 
-Overpass is asked for `LIMIT + 1` results and told to `out center`, both
-load-bearing:
+Overpass is asked for at most ten results and told to `out center`:
 
-- The extra row is how a full house is told from a coincidence. Without it the
-  cap gets reported as a total, and the assistant says "40 pubs" when it means
-  "at least 40". The overflow surfaces as `capped` in the result.
 - Ways and relations carry no top-level `lat`/`lon`; `out center` gives them a
   point, and reading only the top-level pair silently drops every castle, hotel
   and supermarket, which are mapped as buildings.
@@ -252,8 +236,7 @@ php artisan test --compact modules/chat/tests/Feature/
   job class existed can never autoload it — the payload deserialises to an
   `__PHP_Incomplete_Class` and the job lands in `failed_jobs` with "tried to
   access a property on an incomplete object". Run `php artisan queue:restart`
-  (and restart the container in Docker). This is not a code bug and no test
-  catches it.
+  from the repository root. This is not a code bug and no test catches it.
 - Titles need a **running worker**; `QUEUE_CONNECTION=database` here.
 - `read_current_chat` returns the whole transcript, which can flood an agent's
   context on a long conversation. It wants a `limit` parameter.
@@ -276,13 +259,6 @@ php artisan test --compact modules/chat/tests/Feature/
   search). `viewKey()` includes the marker count, because two searches of one
   town share a bounding box and a key without it would leave the first set of
   pins on the map.
-- `EircodeToGeoLocation` returns **fabricated** coordinates: a routing-key table
-  plus a deterministic `crc32` offset, so the same Eircode always lands on the
-  same point. Real resolution needs the licensed Eircode Address Database.
-  Replacing `pointFor()` is the whole job.
-- Eircodes exclude vowels and `B G I J L M O Q S U Z`, and `D6W` is the one
-  routing key with a letter in third position. A pattern of "letter, two digits"
-  rejects a real Eircode.
 - **A failed reply still creates an assistant message.** The stream opens with a
   `start` part before the model has produced anything, so a generation that
   fails leaves an empty assistant message _after_ the question. Two things fall

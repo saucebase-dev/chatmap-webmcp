@@ -12,22 +12,14 @@ use Laravel\Ai\Contracts\RemembersConversations as RemembersConversationsContrac
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Promptable;
-use Laravel\Ai\Providers\Tools\ToolSearch;
 use Laravel\Ai\Providers\Tools\WebSearch;
-use Modules\Chat\Ai\Tools\EircodeToGeoLocation;
 use Modules\Chat\Ai\Tools\FindPlaces;
 use Modules\Chat\Ai\Tools\ShowOnMap;
 use Stringable;
 
 /**
- * Pinned rather than UseCheapestModel, which resolves to gpt-5.4-nano: OpenAI
- * rejects the hosted tool_search tool on nano outright ("Tool 'tool_search' is
- * not supported"), so deferred tool loading costs this model bump. gpt-5.4-mini
- * is the cheapest that accepts it.
- *
- * The step budget is otherwise derived as 1.5x the tool count, which lands on
- * five. Searching the web, resolving an Eircode, moving the map and then
- * answering spends four on its own, leaving no room to recover from a miss.
+ * The model is pinned so provider SDK updates cannot silently change the
+ * quality, latency, or cost of the application's central experience.
  */
 #[Model(self::MODEL)]
 #[MaxSteps(8)]
@@ -59,29 +51,22 @@ class ChatAgent implements Agent, HasProviderOptions, HasTools, RemembersConvers
     public function instructions(): Stringable|string
     {
         $instructions = <<<'INSTRUCTIONS'
-        You are a helpful assistant who answers questions about places in Ireland.
-
-        Ireland is the whole of your subject. Answer questions about Irish towns,
-        streets, addresses, Eircodes, landmarks and neighbourhoods, and about
-        what is in them or near them. If a visitor asks about somewhere outside
-        Ireland, or about something that is not about a place at all, say
-        plainly that you only cover Irish locations and offer to help with one
-        instead. Do not answer it anyway.
+        You are a helpful assistant who answers questions about places anywhere
+        in the world. Focus on towns, streets, addresses, landmarks,
+        neighbourhoods, and what is in or near them. If a request is not about a
+        place, explain that you specialize in location-based questions and offer
+        to help the visitor explore somewhere.
 
         A map sits beside the conversation. Whenever your answer is about a place
         the visitor could look at, call show_on_map so the map follows along, then
         answer normally. Do not mention the map or the tool in your reply, and do
         not read coordinates out loud: the visitor can already see it.
 
-        When the visitor gives an Eircode, resolve it with the Eircode tool
-        rather than guessing which address it belongs to.
-
         When they ask what is in or around somewhere rather than where one place
-        is, use the find_places tool so the map shows them all at once. Never
-        list every result back to them: the map is already showing the pins, so
-        say how many you found and mention the ones worth singling out. If that
-        result comes back marked capped, there are more than you were shown, so
-        say "at least" rather than giving the number as a total.
+        is, use the find_places tool so the map shows up to ten results at once.
+        Treat them as a selection, not a complete inventory. The map already
+        shows every returned pin, so summarize the selection and mention only
+        the places worth singling out.
         INSTRUCTIONS;
 
         $viewport = $this->viewportContext();
@@ -126,10 +111,8 @@ class ChatAgent implements Agent, HasProviderOptions, HasTools, RemembersConvers
     /**
      * Get the tools available to the agent.
      *
-     * ShowOnMap is called on nearly every turn, so it stays loaded rather than
-     * deferred; the provider searches for the rest only when the prompt calls
-     * for them. Anthropic additionally requires at least one tool outside the
-     * ToolSearch wrapper, which is satisfied either way.
+     * Both map tools are local so their calls and results are visible in the
+     * streamed route of thought. Web search remains provider-hosted.
      *
      * @return iterable<Tool>
      */
@@ -137,11 +120,8 @@ class ChatAgent implements Agent, HasProviderOptions, HasTools, RemembersConvers
     {
         return [
             new ShowOnMap,
-            (new WebSearch)->location(country: 'IE'),
-            new ToolSearch(tools: [
-                new EircodeToGeoLocation,
-                new FindPlaces,
-            ]),
+            new FindPlaces,
+            new WebSearch,
         ];
     }
 

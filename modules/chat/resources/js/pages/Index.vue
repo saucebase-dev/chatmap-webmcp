@@ -175,13 +175,12 @@ const CHAT_MIN_SIZE = 25;
 /**
  * Where the map sits until a conversation gives it somewhere better.
  *
- * The whole country, because that is the whole subject: opening on one city
- * suggests the assistant is about that city. Matches the `countrycodes=ie`
- * restriction on the geocoder, so nothing findable falls outside this frame.
+ * The whole world, because that is the whole subject: opening on one country
+ * or city would imply a scope the assistant no longer has.
  */
 const defaultView: MapView = {
-    label: 'Ireland',
-    bbox: ['-10.48', '51.42', '-5.99', '55.44'],
+    label: 'World',
+    bbox: ['-180', '-85', '180', '85'],
 };
 
 /**

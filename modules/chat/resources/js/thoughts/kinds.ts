@@ -1,10 +1,4 @@
-import {
-    BrainIcon,
-    CogIcon,
-    MapPinIcon,
-    MapPinnedIcon,
-    SignpostIcon,
-} from '@lucide/vue';
+import { BrainIcon, CogIcon, MapPinIcon, MapPinnedIcon } from '@lucide/vue';
 import { toMapView, type MapView } from '@modules/chat/resources/js/map';
 import type { Component } from 'vue';
 
@@ -65,13 +59,10 @@ export type ThoughtKind = {
 /**
  * How many a search turned up, as the step should word it.
  *
- * The tool asks for one more than it keeps, so a capped result means there
- * were others it never showed -- "40" would be a total it cannot vouch for.
+ * FindPlaces returns a selection rather than a complete inventory.
  */
 function countOf(view: MapView | null): string {
-    const found = view?.markers?.length ?? 0;
-
-    return view?.capped ? `${found}+` : String(found);
+    return String(view?.markers?.length ?? 0);
 }
 
 export const THOUGHT_KINDS: Record<string, ThoughtKind> = {
@@ -94,22 +85,10 @@ export const THOUGHT_KINDS: Record<string, ThoughtKind> = {
         description: (part) => toMapView(part.output)?.label,
     },
 
-    'tool-eircode_to_geolocation': {
-        icon: SignpostIcon,
-        label: 'Looking up :eircode',
-        doneLabel: 'Located :eircode',
-        failedLabel: 'Could not place :eircode',
-        // The map tools answer in prose when they come up empty, so a parsed
-        // view is the only proof the call landed anywhere.
-        succeeded: (part) => toMapView(part.output) !== null,
-        params: (part) => ({ eircode: String(part.input?.eircode ?? '') }),
-        description: (part) => toMapView(part.output)?.label,
-    },
-
     'tool-find_places': {
         icon: MapPinnedIcon,
         label: 'Searching :area for :category',
-        doneLabel: 'Found :count :category in :area',
+        doneLabel: 'Showing :count :category in :area',
         failedLabel: 'Found no :category in :area',
         // The map tools answer in prose when they come up empty, so a parsed
         // view is the only proof the call landed anywhere.

@@ -96,36 +96,22 @@ class FindPlacesTest extends TestCase
         });
     }
 
-    public function test_it_says_when_there_were_more_than_it_showed(): void
+    public function test_it_keeps_only_the_first_ten_results(): void
     {
-        // 41 back for a cap of 40: the tool asks Overpass for one more than it
-        // means to keep, which is the only way to tell a full house from a
-        // coincidence.
         $this->fakeServices(array_map(fn (int $i): array => [
             'type' => 'node', 'lat' => 53.27 + $i / 10000, 'lon' => -9.04, 'tags' => ['name' => "Pub {$i}"],
-        ], range(1, 41)));
+        ], range(1, 11)));
 
         $result = json_decode((string) (new FindPlaces)->handle(
             new Request(['category' => 'pub', 'area' => 'Galway'])
         ), true);
 
-        $this->assertCount(40, $result['markers']);
-        $this->assertTrue($result['capped']);
-    }
-
-    public function test_an_exact_result_is_not_marked_capped(): void
-    {
-        $this->fakeServices([
-            ['type' => 'node', 'lat' => 53.2741, 'lon' => -9.0476, 'tags' => ['name' => "Darcy's Bar"]],
-        ]);
-
-        $result = json_decode((string) (new FindPlaces)->handle(
-            new Request(['category' => 'pub', 'area' => 'Galway'])
-        ), true);
-
-        // Absent rather than false: the assistant is told about a cap only
-        // when there is one to tell it about.
+        $this->assertCount(10, $result['markers']);
+        $this->assertSame('Pub 10', $result['markers'][9]['name']);
         $this->assertArrayNotHasKey('capped', $result);
+
+        Http::assertSent(fn (ClientRequest $request): bool => ! str_contains($request->url(), 'overpass-api.de')
+            || str_contains($request['data'], 'out center 10;'));
     }
 
     public function test_it_refuses_a_category_it_does_not_know(): void

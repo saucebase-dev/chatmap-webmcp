@@ -7,7 +7,6 @@ use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Models\Conversation;
 use Laravel\Ai\Models\ConversationMessage;
 use Modules\Chat\Ai\ChatAgent;
-use Modules\Chat\Ai\Tools\EircodeToGeoLocation;
 use Modules\Chat\Ai\Tools\FindPlaces;
 use Modules\Chat\Ai\Tools\ShowOnMap;
 use Tests\TestCase;
@@ -89,36 +88,6 @@ class ChatMapViewTest extends TestCase
                 // empty map would be showing the wrong answer entirely.
                 ->count('initialMapView.markers', 2)
         );
-    }
-
-    public function test_an_eircode_lookup_also_restores_the_map(): void
-    {
-        $user = $this->createUser();
-        $conversation = $this->conversationFor($user);
-
-        $this->storeMessage($conversation, '0001', 'user', 'Where is D02 X285?');
-        $this->storeMessage($conversation, '0002', 'assistant', 'That is in Dublin 2.', [
-            [
-                'id' => 'call-1',
-                'name' => EircodeToGeoLocation::NAME,
-                'arguments' => ['eircode' => 'D02 X285'],
-                'result' => json_encode([
-                    'label' => 'D02 X285',
-                    'bbox' => ['-6.2515', '53.3325', '-6.2435', '53.3375'],
-                    'marker' => ['53.335', '-6.2475'],
-                ]),
-                'result_id' => null,
-            ],
-        ]);
-
-        // Every map-moving tool has to be listed, or reopening the
-        // conversation snaps the map back to its default while the messages
-        // beside it still discuss somewhere else.
-        $this->actingAs($user)->get(route('chat.show', $conversation->id))
-            ->assertInertia(
-                fn ($page) => $page->component('Chat::Index', false)
-                    ->where('initialMapView.label', 'D02 X285')
-            );
     }
 
     public function test_a_conversation_that_never_moved_the_map_has_no_map_view(): void
