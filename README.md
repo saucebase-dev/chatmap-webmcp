@@ -1,8 +1,8 @@
-# Whatsthere
+# Wayfinder
 
 Ask about a place in plain language and watch the map keep up.
 
-Whatsthere pairs a streaming AI chat with a live map. Ask about somewhere and the
+Wayfinder pairs a streaming AI chat with a live map. Ask about somewhere and the
 assistant moves the map to it; drag the map yourself and the assistant knows what
 you are looking at when you ask "what's here?".
 
@@ -118,7 +118,7 @@ you are signed in.
 
 ## Built on Saucebase
 
-Whatsthere is built on [Saucebase](https://saucebase-dev.github.io/docs/), a
+Wayfinder is built on [Saucebase](https://saucebase-dev.github.io/docs/), a
 modular Laravel starter kit, which supplies the module system and the `auth` and
 `settings` modules. This is a starting point rather than a vendored dependency —
 inherited code that no longer suits the application is fair game to change.

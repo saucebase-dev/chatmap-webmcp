@@ -1,6 +1,6 @@
-## Whatsthere
+## Wayfinder
 
-Whatsthere is a Laravel application **built on** the Saucebase modular starter
+Wayfinder is a Laravel application **built on** the Saucebase modular starter
 kit. Saucebase supplies the module system and the `auth`, `settings`, and
 `breadcrumbs` modules; everything else here is application code. This is a
 starting point, not a vendored dependency: inherited code that no longer suits
