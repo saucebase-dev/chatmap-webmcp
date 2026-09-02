@@ -13,8 +13,12 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Providers\Tools\WebSearch;
+use Laravel\Ai\ToolChoice;
 use Modules\Chat\Ai\Tools\FindPlaces;
+use Modules\Chat\Ai\Tools\InterviewVisitor;
+use Modules\Chat\Ai\Tools\SaveMapReadyPlan;
 use Modules\Chat\Ai\Tools\ShowOnMap;
+use Modules\Chat\Models\OnboardingState;
 use Stringable;
 
 /**
@@ -37,10 +41,15 @@ class ChatAgent implements Agent, HasProviderOptions, HasTools, RemembersConvers
     public const string MODEL = 'gpt-5.4-mini';
 
     /**
+     * Questions the interview always asks before a plan can be saved.
+     */
+    public const int MIN_QUESTIONS = 2;
+
+    /**
      * @param  array{label: string, center: array{float, float}, zoom: float, moved: bool}|null  $mapViewport
      *                                                                                                         Where the visitor's map is pointing as this message is sent.
      */
-    public function __construct(protected ?array $mapViewport = null) {}
+    public function __construct(protected ?array $mapViewport = null, protected ?OnboardingState $onboarding = null) {}
 
     /**
      * Get the instructions that the agent should follow.
@@ -56,22 +65,73 @@ class ChatAgent implements Agent, HasProviderOptions, HasTools, RemembersConvers
         neighbourhoods, and what is in or near them. If a request is not about a
         place, explain that you specialize in location-based questions and offer
         to help the visitor explore somewhere.
-
-        A map sits beside the conversation. Whenever your answer is about a place
-        the visitor could look at, call show_on_map so the map follows along, then
-        answer normally. Do not mention the map or the tool in your reply, and do
-        not read coordinates out loud: the visitor can already see it.
-
-        When they ask what is in or around somewhere rather than where one place
-        is, use the find_places tool so the map shows up to ten results at once.
-        Treat them as a selection, not a complete inventory. The map already
-        shows every returned pin, so summarize the selection and mention only
-        the places worth singling out.
         INSTRUCTIONS;
+
+        if ($this->onboarding === null || $this->onboarding->phase === 'mapping') {
+            $instructions .= <<<'INSTRUCTIONS'
+
+
+            A map sits beside the conversation. Whenever your answer is about a place
+            the visitor could look at, call show_on_map so the map follows along, then
+            answer normally. Do not mention the map or the tool in your reply, and do
+            not read coordinates out loud: the visitor can already see it.
+
+            When they ask what is in or around somewhere rather than where one place
+            is, use the find_places tool so the map shows up to ten results at once.
+            Treat them as a selection, not a complete inventory. The map already
+            shows every returned pin, so summarize the selection and mention only
+            the places worth singling out.
+            INSTRUCTIONS;
+        }
+
+        $instructions .= $this->onboardingContext();
 
         $viewport = $this->viewportContext();
 
         return $viewport === '' ? $instructions : $instructions."\n\n".$viewport;
+    }
+
+    /**
+     * Steer the assistant through discovery, review, and the open map.
+     *
+     * The phase lives in the onboarding row, so the model is told plainly what
+     * it may and may not do rather than left to infer it from the transcript.
+     */
+    protected function onboardingContext(): string
+    {
+        if ($this->onboarding === null) {
+            return '';
+        }
+
+        $plan = json_encode($this->onboarding->plan ?? [], JSON_THROW_ON_ERROR);
+        $answers = json_encode($this->onboarding->answers ?? [], JSON_THROW_ON_ERROR);
+
+        return match ($this->onboarding->phase) {
+            'interviewing' => <<<TEXT
+
+
+            The visitor is in a short discovery interview before the map opens. Do not answer the request, recommend anything, or list places yet: that happens on the map afterwards.
+            Answers so far: {$answers}. Questions asked so far: {$this->onboarding->question_count} of a hard maximum of 10.
+            Each turn do exactly one of these:
+            1. If at least two questions have been asked, the goal and a named location are known, and nothing important is missing, call save_map_ready_plan.
+            2. Otherwise call interview_visitor once with the single most useful missing question. Prioritise location, purpose, timing, companions, interests, and constraints such as budget or accessibility. Never ask something the visitor already answered. Give 2 to 5 options with the recommended one first; the interface adds "Other" itself.
+            A location is required before saving the plan. Stop as soon as you have enough detail: three or four questions are usually plenty.
+            Saved plan so far: {$plan}. If a plan already exists, the visitor came back for more questions: ask at least one new question about something the plan does not cover before saving it again.
+            If the visitor asks to skip or says they want the map, call save_map_ready_plan immediately with what you know.
+            After calling a tool, do not repeat the question or the plan in prose and do not give suggestions. Reply with one short friendly sentence at most, or nothing.
+            TEXT,
+            'reviewing' => <<<TEXT
+
+
+            The visitor is reviewing their saved plan before opening the map: {$plan}. Do not ask more questions and do not list places yet.
+            If they change or add anything, call save_map_ready_plan with the complete updated plan and confirm in one sentence.
+            TEXT,
+            default => <<<TEXT
+
+
+            The visitor's plan: {$plan}. Use it to guide every search and suggestion. If they change their goal, location, or an important detail, call save_map_ready_plan with the complete updated plan as well as helping them.
+            TEXT,
+        };
     }
 
     /**
@@ -118,11 +178,38 @@ class ChatAgent implements Agent, HasProviderOptions, HasTools, RemembersConvers
      */
     public function tools(): iterable
     {
+        // During discovery the map tools are withheld outright rather than
+        // forbidden in prose: the model reliably reached for find_places the
+        // moment a place was named, whatever the instructions said.
+        if ($this->onboarding !== null && $this->onboarding->phase !== 'mapping') {
+            // The plan tool is withheld until two questions have been asked, so
+            // a well-worded opening message cannot skip the interview outright.
+            return [
+                ...($this->onboarding->question_count >= self::MIN_QUESTIONS ? [new SaveMapReadyPlan($this->onboarding)] : []),
+                ...($this->onboarding->phase === 'interviewing' ? [new InterviewVisitor($this->onboarding)] : []),
+            ];
+        }
+
         return [
             new ShowOnMap,
             new FindPlaces,
             new WebSearch,
+            ...($this->onboarding === null ? [] : [new SaveMapReadyPlan($this->onboarding)]),
         ];
+    }
+
+    /**
+     * Force a tool call on the first step while the visitor is in discovery.
+     *
+     * With only the interview and plan tools on offer, "required" means the
+     * turn always produces a question or a plan. The SDK releases the choice
+     * on the next step so the model can still add a short sentence.
+     */
+    public function toolChoice(): ?string
+    {
+        return $this->onboarding !== null && $this->onboarding->phase !== 'mapping'
+            ? ToolChoice::required
+            : null;
     }
 
     /**

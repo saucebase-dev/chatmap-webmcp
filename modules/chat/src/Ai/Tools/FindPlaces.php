@@ -73,6 +73,30 @@ class FindPlaces implements Tool
     protected const LIMIT = 10;
 
     /**
+     * How many results to ask Overpass for, so named places can be preferred.
+     * Unnamed viewpoints and parks are common, and ten of "Viewpoint" tells
+     * the visitor nothing.
+     */
+    protected const FETCH = 40;
+
+    /**
+     * The OpenStreetMap tags worth carrying to the popup and the model.
+     * Everything else is dropped: the result is context as well as map data.
+     */
+    protected const array DETAIL_TAGS = [
+        'opening_hours' => 'hours',
+        'website' => 'website',
+        'contact:website' => 'website',
+        'phone' => 'phone',
+        'contact:phone' => 'phone',
+        'cuisine' => 'cuisine',
+        'wheelchair' => 'wheelchair',
+        'outdoor_seating' => 'outdoor_seating',
+        'internet_access' => 'internet_access',
+        'description' => 'description',
+    ];
+
+    /**
      * Get the tool's name.
      */
     public function name(): string
@@ -131,9 +155,10 @@ class FindPlaces implements Tool
             // and "church" and "pharmacy" do not take a bare s.
             'category' => $this->label($category),
             'bbox' => $bounds['bbox'],
-            // Defensive as well as descriptive: even if an Overpass mirror
-            // ignores its output limit, the map and model still receive ten.
+            // More are fetched than shown, so named places can be preferred;
+            // the map and the model still receive at most ten.
             'markers' => array_slice($places, 0, self::LIMIT),
+            'note' => 'Each marker may carry details such as hours, address, cuisine, wheelchair access or a website. Mention the ones that matter for the visitor\'s plan, for example accessibility or opening hours.',
         ], JSON_THROW_ON_ERROR);
     }
 
@@ -173,9 +198,9 @@ class FindPlaces implements Tool
      */
     protected function search(string $category, array $bbox): ?array
     {
-        // Versioned so cached forty-result payloads from the previous contract
-        // can never leak into the new top-ten response.
-        $key = 'overpass:top10:'.$category.':'.md5(implode(',', $bbox));
+        // Versioned: a cached answer from before markers carried details would
+        // otherwise serve bare pins for a day.
+        $key = 'overpass:v3:'.$category.':'.md5(implode(',', $bbox));
 
         if (($cached = Cache::get($key)) !== null) {
             return $cached;
@@ -204,12 +229,16 @@ class FindPlaces implements Tool
      * pair would silently drop every building, which is most castles, hotels
      * and supermarkets.
      *
+     * Named places come first, so a search that finds a handful of named cafés
+     * among dozens of unnamed ones shows the ones a visitor can look up.
+     *
      * @param  array<int, array<string, mixed>>  $elements
-     * @return list<array{lat: float, lon: float, name: string}>
+     * @return list<array{lat: float, lon: float, name: string, details?: array<string, string>}>
      */
     protected function toMarkers(array $elements, string $category): array
     {
-        $markers = [];
+        $named = [];
+        $unnamed = [];
 
         foreach ($elements as $element) {
             $latitude = $element['lat'] ?? $element['center']['lat'] ?? null;
@@ -219,17 +248,61 @@ class FindPlaces implements Tool
                 continue;
             }
 
-            // Every other OpenStreetMap tag is dropped here. The result is the
-            // model's context as well as the map's data, and a marker needs a
-            // point and something to call it.
-            $markers[] = [
+            $tags = (array) ($element['tags'] ?? []);
+
+            $marker = [
                 'lat' => (float) $latitude,
                 'lon' => (float) $longitude,
-                'name' => (string) ($element['tags']['name'] ?? ucfirst($this->label($category, plural: false))),
+                // The English name where the map has one: the assistant and
+                // the visitor both read the pin, and neither may read kanji.
+                'name' => (string) ($tags['name:en'] ?? $tags['name'] ?? ucfirst($this->label($category, plural: false))),
             ];
+
+            $details = $this->details($tags);
+
+            if ($details !== []) {
+                $marker['details'] = $details;
+            }
+
+            if (isset($tags['name'])) {
+                $named[] = $marker;
+            } else {
+                $unnamed[] = $marker;
+            }
         }
 
-        return $markers;
+        return [...$named, ...$unnamed];
+    }
+
+    /**
+     * Pick out the tags a visitor can act on, under stable short keys.
+     *
+     * @param  array<string, mixed>  $tags
+     * @return array<string, string>
+     */
+    protected function details(array $tags): array
+    {
+        $details = [];
+
+        foreach (self::DETAIL_TAGS as $tag => $key) {
+            $value = trim((string) ($tags[$tag] ?? ''));
+
+            if ($value !== '' && ! isset($details[$key])) {
+                $details[$key] = mb_substr($value, 0, 200);
+            }
+        }
+
+        // A house number is only an address next to its street.
+        $street = isset($tags['addr:street'])
+            ? trim(($tags['addr:housenumber'] ?? '').' '.$tags['addr:street'])
+            : '';
+        $address = trim(implode(', ', array_filter([$street, $tags['addr:city'] ?? null])));
+
+        if ($address !== '') {
+            $details = ['address' => $address] + $details;
+        }
+
+        return $details;
     }
 
     /**
@@ -257,7 +330,7 @@ class FindPlaces implements Tool
             '[out:json][timeout:25];nwr%s(%s);out center %d;',
             self::CATEGORIES[$category],
             $box,
-            self::LIMIT
+            self::FETCH
         );
 
         $response = Http::asForm()

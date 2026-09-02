@@ -14,12 +14,17 @@ conversations, exposed to external AI agents over WebMCP.
 | Provider   | `ChatServiceProvider` — shares `chat.sessions` via `shareInertiaData()`                                |
 | Pages      | `Index` (the whole UI; blank or an existing conversation)                                              |
 | Thoughts   | `resources/js/thoughts/` — `kinds.ts` (the registry), `index.ts` (`thoughtsFor()`)                     |
-| Components | `ChatSessions` (sidebar), `ContextMap`, `ThinkingIndicator`, `TypewriterText`                          |
+| Components | `ChatSessions` (sidebar), `ContextMap`, `PlanSummary` (plan card rows), `ThinkingIndicator`, `TypewriterText` |
 | Frontend   | `resources/js/map.ts` — `MapView`, `MAP_TOOLS`, `toMapView()`, `viewKey()`                             |
 | WebMCP     | `resources/js/webmcp/chatTools.ts`                                                                     |
 
-**No models or migrations** — conversations live in `laravel/ai`'s
-`agent_conversations` / `agent_conversation_messages` tables.
+Conversations live in `laravel/ai`'s `agent_conversations` /
+`agent_conversation_messages` tables. The only module-owned table is
+`onboarding_states`, one row per conversation holding the onboarding phase
+(`interviewing` → `reviewing` → `mapping`), the open question, recorded answers,
+and the map-ready plan. `InterviewVisitor` and `SaveMapReadyPlan` write it; the
+`chat.onboarding` route moves it to `mapping` deterministically for "Skip" and
+"Show my map", so neither depends on the model doing the right thing.
 
 ## Routes
 
@@ -31,6 +36,7 @@ POST  chat/messages                 → chat.stream    send + stream a reply
 POST  chat/place                    → chat.place     geocode for WebMCP
 GET   chat/{conversation}           → chat.show      open a conversation
 GET   chat/{conversation}/messages  → chat.messages  read one as JSON
+PATCH chat/{conversation}/onboarding → chat.onboarding  open the map (skip / show)
 ```
 
 `chat/place` is declared **before** `chat/{conversation}` or the router reads
@@ -168,7 +174,15 @@ interpolated are bounding-box floats. A `filter` parameter the model composed
 itself would be an injection surface aimed at somebody else's donated server.
 Adding a category is one line in that array.
 
-Overpass is asked for at most ten results and told to `out center`:
+Overpass is asked for forty results and told to `out center`; named places are
+kept first and the top ten are returned. Each marker may carry `details`
+(address, hours, website, phone, cuisine, wheelchair, outdoor seating, Wi-Fi,
+description) from an allow-list of OpenStreetMap tags. `ContextMap` renders
+them into the popup with DOM nodes, never `setHTML`, and only links to
+`http(s)` websites. The English name is preferred when the map has one.
+
+Overpass results are cached under a versioned key (`overpass:v3:`), so bump
+the version whenever the marker shape changes.
 
 - Ways and relations carry no top-level `lat`/`lon`; `out center` gives them a
   point, and reading only the top-level pair silently drops every castle, hotel
@@ -194,10 +208,19 @@ Both failures are silent.
 Tools run in the page inside the visitor's existing session — no tokens, no
 CORS, no second auth surface.
 
-Every `execute` reads live state when called rather than closing over it. That
-keeps the tool array constant, which matters because Chrome cannot update a
-registered tool: changing the exposed set means aborting every registration and
-redeclaring.
+**The tool set follows the onboarding phase.** Each tool may carry `phases`;
+the page passes a computed list filtered by the current phase, and the
+composable re-registers with the browser whenever that list changes. An agent
+inspecting the page mid-interview sees `answer_question` and `skip_interview`;
+after "Show my map" it sees `open_map` give way to `read_map_location`,
+`show_place_on_map`, `show_trip_plan` and `update_trip_plan`. `read_trip_plan`, `start_trip`,
+`ask_this_assistant`, `read_current_chat`, `list_chat_sessions` and
+`open_chat_session` are always offered.
+
+Every `execute` reads live state when called rather than closing over it, so
+nothing but a phase change rebuilds the list. Tools that send a message await
+`chat.sendMessage()`, which resolves when the reply has finished streaming, so
+an agent can chain `answer_question` calls and read the plan at the end.
 
 ## Test mode
 
@@ -281,10 +304,14 @@ php artisan test --compact modules/chat/tests/Feature/
 - Popups are opened with `focusAfterOpen: false`. MapLibre otherwise moves
   focus to the close button as the popup opens, so every pin clicked comes up
   with a focus ring already on it.
-- `MessageResponse` renders reasoning prose with `mode="static"`. The streaming
-  mode wraps every unit in an `inline-block` span, and `animation-split="char"`
-  means hundreds of boxes relaid out per token — that is what produced the
-  forced-reflow warnings. Leave the main reply on `"auto"`.
+- **The streaming reply runs with `:enable-animate="false"`.** With animation
+  on, `vue-stream-markdown` wraps every word in a Vue `TransitionGroup`, and on
+  each streamed token Vue calls `getBoundingClientRect` on every word and
+  `getComputedStyle` on each entering one. Cost grows with the reply: profiled
+  at 8.8 s in `getTransitionInfo` plus 3.4 s in rect reads for one long answer,
+  with single main-thread freezes over 10 s, and the animation never visibly
+  ran. Reasoning prose stays on `mode="static"`. `followAnchor` is coalesced to
+  one run per animation frame for the same reason: it reads layout.
 - Tests must not depend on built assets. `tests/TestCase::setUp()` calls
   `withoutVite()` because the `phpunit-raw` CI job runs with `skip-build`, and
   `public/build` is gitignored — a Blade layout calling `@vite` (Filament's admin

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button';
+import { trans } from 'laravel-vue-i18n';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -269,13 +270,17 @@ function showView(view: MapView, animate: boolean): void {
     }
 
     for (const place of view.markers ?? []) {
-        const element = placeMarkerElement(view.categoryKey, place.name);
+        const element = placeMarkerElement(
+            place.categoryKey ?? view.categoryKey,
+            place.name,
+        );
 
         placed.push(
             new Marker({ element, anchor: 'bottom', offset: [0, -4] })
                 .setLngLat([place.lon, place.lat])
-                // setText, never setHTML: these names come from OpenStreetMap,
-                // which anyone can edit, so they are somebody else's input.
+                // Built from DOM nodes, never setHTML: every string comes from
+                // OpenStreetMap, which anyone can edit, so it is somebody
+                // else's input.
                 .setPopup(
                     // focusAfterOpen: MapLibre moves focus to the close button
                     // as the popup opens, so every pin you click comes up with
@@ -285,7 +290,8 @@ function showView(view: MapView, animate: boolean): void {
                     new Popup({
                         offset: PLACE_POPUP_OFFSET,
                         focusAfterOpen: false,
-                    }).setText(place.name),
+                        maxWidth: '280px',
+                    }).setDOMContent(popupContent(place)),
                 )
                 .addTo(instance),
         );
@@ -306,6 +312,83 @@ function dropMarkers(): void {
         pin.remove();
     });
     markers.value = [];
+}
+
+/**
+ * The popup for one place: its name, then whatever OpenStreetMap knew.
+ *
+ * Text nodes only. The website becomes a real link because that is the one
+ * thing a visitor wants to click, but its href is checked to be http(s) so a
+ * `javascript:` value edited into the map data cannot run here.
+ */
+function popupContent(place: MapMarker): HTMLElement {
+    const root = document.createElement('div');
+    root.className = 'space-y-1 text-sm';
+
+    const title = document.createElement('div');
+    title.className = 'font-semibold';
+    title.textContent = place.name;
+    root.append(title);
+
+    const details = place.details ?? {};
+
+    const lines: Array<[string, string | undefined]> = [
+        ['📍', details.address],
+        ['🕒', details.hours],
+        ['🍽️', details.cuisine?.replaceAll(';', ', ').replaceAll('_', ' ')],
+        [
+            '♿',
+            details.wheelchair
+                ? trans('Wheelchair: :value', { value: details.wheelchair })
+                : undefined,
+        ],
+        ['📶', details.internet_access ? trans('Wi-Fi') : undefined],
+        [
+            '🪑',
+            details.outdoor_seating === 'yes'
+                ? trans('Outdoor seating')
+                : undefined,
+        ],
+        ['📞', details.phone],
+    ];
+
+    for (const [icon, text] of lines) {
+        if (!text) {
+            continue;
+        }
+
+        const line = document.createElement('div');
+        line.className = 'text-muted-foreground flex gap-1.5';
+        const glyph = document.createElement('span');
+        glyph.setAttribute('aria-hidden', 'true');
+        glyph.textContent = icon;
+        const body = document.createElement('span');
+        body.textContent = text;
+        line.append(glyph, body);
+        root.append(line);
+    }
+
+    if (details.description) {
+        const description = document.createElement('p');
+        description.className =
+            'text-muted-foreground line-clamp-3 pt-1 text-xs';
+        description.textContent = details.description;
+        root.append(description);
+    }
+
+    if (details.website && /^https?:\/\//i.test(details.website)) {
+        const link = document.createElement('a');
+        link.href = details.website;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.className = 'text-primary block truncate pt-1 underline';
+        link.textContent = details.website
+            .replace(/^https?:\/\/(www\.)?/i, '')
+            .replace(/\/$/, '');
+        root.append(link);
+    }
+
+    return root;
 }
 
 /** Center a search result and open the popup already attached to its pin. */

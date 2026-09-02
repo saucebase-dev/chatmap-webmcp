@@ -1,4 +1,10 @@
-import { BrainIcon, CogIcon, MapPinIcon, MapPinnedIcon } from '@lucide/vue';
+import {
+    BrainIcon,
+    CircleHelpIcon,
+    CogIcon,
+    MapPinIcon,
+    MapPinnedIcon,
+} from '@lucide/vue';
 import {
     toMapView,
     type MapMarker,
@@ -125,6 +131,12 @@ export const THOUGHT_KINDS: Record<string, ThoughtKind> = {
                   }
                 : undefined;
         },
+    },
+
+    'tool-interview_visitor': {
+        icon: CircleHelpIcon,
+        label: 'Ask a user question',
+        doneLabel: 'Asked a user question',
     },
 };
 

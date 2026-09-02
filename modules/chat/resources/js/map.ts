@@ -28,6 +28,23 @@ export type MapMarker = {
     lat: number;
     lon: number;
     name: string;
+    /** Set when several searches share one map, so each pin keeps its symbol. */
+    categoryKey?: string;
+    /** Whatever OpenStreetMap knew that a visitor can act on. Keys from FindPlaces::DETAIL_TAGS. */
+    details?: Partial<
+        Record<
+            | 'address'
+            | 'hours'
+            | 'website'
+            | 'phone'
+            | 'cuisine'
+            | 'wheelchair'
+            | 'outdoor_seating'
+            | 'internet_access'
+            | 'description',
+            string
+        >
+    >;
 };
 
 /** What a map tool hands back, once parsed. */
@@ -60,10 +77,14 @@ export type MapViewport = {
  * this instead means the camera only moves when the place actually differs.
  */
 export function viewKey(view: MapView): string {
-    // The marker count is part of the identity, not decoration. Two searches
-    // of the same town share a bounding box, so without it "cafes in Galway"
-    // after "pubs in Galway" would leave the first set of pins on the map.
-    return `${view.label}|${view.bbox.join(',')}|${view.markers?.length ?? 0}`;
+    // The pins are part of the identity, not decoration. Two searches of the
+    // same town share a bounding box and often a count, so without them
+    // "cafes in Shibuya" searched twice would leave the first set on the map.
+    const pins = (view.markers ?? [])
+        .map((marker) => `${marker.name}@${marker.lat},${marker.lon}`)
+        .join(';');
+
+    return `${view.label}|${view.bbox.join(',')}|${pins}`;
 }
 
 /**
@@ -90,4 +111,51 @@ export function toMapView(output: unknown): MapView | null {
     } catch {
         return null;
     }
+}
+
+/**
+ * One view for everything a single reply put on the map.
+ *
+ * The assistant often searches twice in one turn ("restaurants" then
+ * "museums") and finishes by placing the town itself. Taking the last result
+ * left one pin where twenty belonged. Any searches in the reply win over a
+ * plain placement; their pins are pooled, and the box grows to hold them all.
+ */
+export function mergeViews(views: MapView[]): MapView | null {
+    const searches = views.filter((view) => view.markers?.length);
+
+    if (searches.length === 0) {
+        return views.at(-1) ?? null;
+    }
+
+    if (searches.length === 1) {
+        return searches[0];
+    }
+
+    const markers = searches.flatMap((view) =>
+        (view.markers ?? []).map((marker) => ({
+            ...marker,
+            categoryKey: marker.categoryKey ?? view.categoryKey,
+        })),
+    );
+
+    const lons = searches.flatMap((view) => [+view.bbox[0], +view.bbox[2]]);
+    const lats = searches.flatMap((view) => [+view.bbox[1], +view.bbox[3]]);
+
+    const area = searches[0].label.split(' in ').slice(1).join(' in ');
+    const categories = searches
+        .map((view) => view.category ?? view.label)
+        .join(' and ');
+
+    return {
+        label: area ? `${categories} in ${area}` : categories,
+        category: categories,
+        bbox: [
+            String(Math.min(...lons)),
+            String(Math.min(...lats)),
+            String(Math.max(...lons)),
+            String(Math.max(...lats)),
+        ],
+        markers,
+    };
 }

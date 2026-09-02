@@ -47,7 +47,39 @@ class FindPlacesTest extends TestCase
                 ['lat' => 53.2741, 'lon' => -9.0476, 'name' => "Darcy's Bar"],
                 ['lat' => 53.2745, 'lon' => -9.0480, 'name' => 'The Skeff'],
             ],
-        ], json_decode((string) $result, true));
+        ], array_diff_key(json_decode((string) $result, true), ['note' => true]));
+    }
+
+    public function test_it_carries_useful_tags_as_details_and_prefers_named_places(): void
+    {
+        $this->fakeServices([
+            ['type' => 'node', 'lat' => 53.1, 'lon' => -9.1, 'tags' => ['amenity' => 'cafe']],
+            ['type' => 'node', 'lat' => 53.2, 'lon' => -9.2, 'tags' => [
+                'name' => 'Coffeewerk',
+                'name:en' => 'Coffeewerk + Press',
+                'opening_hours' => 'Mo-Su 08:00-18:00',
+                'addr:housenumber' => '4',
+                'addr:street' => 'Quay Street',
+                'addr:city' => 'Galway',
+                'website' => 'https://coffeewerk.example',
+                'wheelchair' => 'yes',
+                'internet_access' => 'wlan',
+                'brand:wikidata' => 'Q1',
+            ]],
+        ]);
+
+        $markers = json_decode((string) (new FindPlaces)->handle(new Request(['category' => 'cafe', 'area' => 'Galway'])), true)['markers'];
+
+        $this->assertSame('Coffeewerk + Press', $markers[0]['name']);
+        $this->assertSame([
+            'address' => '4 Quay Street, Galway',
+            'hours' => 'Mo-Su 08:00-18:00',
+            'website' => 'https://coffeewerk.example',
+            'wheelchair' => 'yes',
+            'internet_access' => 'wlan',
+        ], $markers[0]['details']);
+        $this->assertSame('Cafe', $markers[1]['name']);
+        $this->assertArrayNotHasKey('details', $markers[1]);
     }
 
     public function test_it_reads_the_centre_of_a_building_not_just_a_point(): void
