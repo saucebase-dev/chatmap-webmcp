@@ -11,6 +11,7 @@ import {
     MAP_STYLES,
     styleUrlFor,
     viewKey,
+    type MapMarker,
     type MapStyleId,
     type MapView,
     type MapViewport,
@@ -22,6 +23,33 @@ import {
 } from '@vueuse/core';
 import IconBuilding from '~icons/lucide/building-2';
 import IconPalette from '~icons/lucide/palette';
+import IconScan from '~icons/lucide/scan';
+import IconAtm from '~icons/maki/bank';
+import IconBeach from '~icons/maki/beach';
+import IconPub from '~icons/maki/beer';
+import IconBusStation from '~icons/maki/bus';
+import IconCafe from '~icons/maki/cafe';
+import IconCampSite from '~icons/maki/campsite';
+import IconCastle from '~icons/maki/castle';
+import IconCinema from '~icons/maki/cinema';
+import IconFuel from '~icons/maki/fuel';
+import IconGolfCourse from '~icons/maki/golf';
+import IconSupermarket from '~icons/maki/grocery';
+import IconHospital from '~icons/maki/hospital';
+import IconHotel from '~icons/maki/lodging';
+import IconMarker from '~icons/maki/marker';
+import IconRuins from '~icons/maki/monument';
+import IconMuseum from '~icons/maki/museum';
+import IconPark from '~icons/maki/park';
+import IconCarPark from '~icons/maki/parking';
+import IconPharmacy from '~icons/maki/pharmacy';
+import IconChurch from '~icons/maki/place-of-worship';
+import IconPlayground from '~icons/maki/playground';
+import IconTrainStation from '~icons/maki/rail';
+import IconRestaurant from '~icons/maki/restaurant';
+import IconLibrary from '~icons/maki/library';
+import IconToilets from '~icons/maki/toilet';
+import IconViewpoint from '~icons/maki/viewpoint';
 import {
     Map as MapLibreMap,
     Marker,
@@ -29,10 +57,20 @@ import {
     Popup,
     setWorkerUrl,
     type LngLatBoundsLike,
+    type Offset,
 } from 'maplibre-gl';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import {
+    h,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    render,
+    shallowRef,
+    watch,
+    type Component,
+} from 'vue';
 
 /**
  * Tell MapLibre where its worker actually landed.
@@ -75,6 +113,62 @@ const container = ref<HTMLDivElement | null>(null);
 // deeply would be pure overhead.
 const map = shallowRef<MapLibreMap | null>(null);
 const markers = shallowRef<Marker[]>([]);
+const canReturnToSearch = ref(false);
+
+type PlaceMarkerStyle = { icon: Component; color: string };
+
+/**
+ * Maki symbols plus distinct backgrounds for every supported place category.
+ * Every colour has at least 4.5:1 contrast against the white icon.
+ */
+const PLACE_MARKER_STYLES: Record<string, PlaceMarkerStyle> = {
+    pub: { icon: IconPub, color: '#92400e' },
+    restaurant: { icon: IconRestaurant, color: '#b91c1c' },
+    cafe: { icon: IconCafe, color: '#7c2d12' },
+    hotel: { icon: IconHotel, color: '#4338ca' },
+    castle: { icon: IconCastle, color: '#475569' },
+    ruins: { icon: IconRuins, color: '#57534e' },
+    museum: { icon: IconMuseum, color: '#7e22ce' },
+    viewpoint: { icon: IconViewpoint, color: '#1d4ed8' },
+    beach: { icon: IconBeach, color: '#0f766e' },
+    park: { icon: IconPark, color: '#15803d' },
+    playground: { icon: IconPlayground, color: '#be185d' },
+    golf_course: { icon: IconGolfCourse, color: '#047857' },
+    camp_site: { icon: IconCampSite, color: '#3f6212' },
+    church: { icon: IconChurch, color: '#6d28d9' },
+    library: { icon: IconLibrary, color: '#3730a3' },
+    cinema: { icon: IconCinema, color: '#9f1239' },
+    pharmacy: { icon: IconPharmacy, color: '#be123c' },
+    hospital: { icon: IconHospital, color: '#991b1b' },
+    supermarket: { icon: IconSupermarket, color: '#0369a1' },
+    fuel: { icon: IconFuel, color: '#334155' },
+    atm: { icon: IconAtm, color: '#1e40af' },
+    car_park: { icon: IconCarPark, color: '#4b5563' },
+    train_station: { icon: IconTrainStation, color: '#6b21a8' },
+    bus_station: { icon: IconBusStation, color: '#0e7490' },
+    toilets: { icon: IconToilets, color: '#374151' },
+};
+
+const FALLBACK_MARKER_STYLE: PlaceMarkerStyle = {
+    icon: IconMarker,
+    color: '#0f766e',
+};
+
+/**
+ * A pin rises 42px from its coordinate, but does not extend below it.
+ * Downward popups therefore need only a small gap instead of that full lift.
+ */
+const PLACE_POPUP_OFFSET: Offset = {
+    center: [0, -20],
+    top: [0, 4],
+    'top-left': [0, 4],
+    'top-right': [0, 4],
+    bottom: [0, -42],
+    'bottom-left': [0, -42],
+    'bottom-right': [0, -42],
+    left: [26, -20],
+    right: [-26, -20],
+};
 
 const isDark = ref(false);
 
@@ -97,6 +191,62 @@ function boundsOf(view: MapView): LngLatBoundsLike {
     ];
 }
 
+/** Fit searches to what was found, not the often much larger searched area. */
+function boundsOfMarkers(view: MapView): LngLatBoundsLike {
+    const places = view.markers;
+
+    if (!places?.length) {
+        return boundsOf(view);
+    }
+
+    const longitudes = places.map((place) => place.lon);
+    const latitudes = places.map((place) => place.lat);
+
+    return [
+        [Math.min(...longitudes), Math.min(...latitudes)],
+        [Math.max(...longitudes), Math.max(...latitudes)],
+    ];
+}
+
+/** Restore the camera framing that belongs to the current search result set. */
+function fitView(view: MapView, animate: boolean): void {
+    map.value?.fitBounds(boundsOfMarkers(view), {
+        // Keep the outer pins clear of the controls and viewport edge while
+        // still letting the results occupy most of the map.
+        padding: 48,
+        animate,
+        // A single address geocodes to a pinpoint bbox, which would otherwise
+        // slam the camera to maximum zoom.
+        maxZoom: 16,
+    });
+}
+
+/** Build an upright Maki symbol inside a compact, branded map pin. */
+function placeMarkerElement(
+    categoryKey: string | undefined,
+    name: string,
+): HTMLElement {
+    const element = document.createElement('div');
+    const markerStyle =
+        PLACE_MARKER_STYLES[categoryKey ?? ''] ?? FALLBACK_MARKER_STYLE;
+
+    element.setAttribute('role', 'button');
+    element.setAttribute('aria-label', name);
+    element.style.setProperty('--marker-color', markerStyle.color);
+    element.className =
+        "relative grid size-9 cursor-pointer place-items-center rounded-full border-2 border-white text-white shadow-lg ring-1 ring-black/20 transition-[filter] [background-color:var(--marker-color)] after:absolute after:-bottom-1 after:left-1/2 after:size-2 after:-translate-x-1/2 after:rotate-45 after:border-r-2 after:border-b-2 after:border-white after:[background-color:var(--marker-color)] after:content-[''] hover:brightness-110";
+
+    render(
+        h(markerStyle.icon, {
+            class: 'relative z-10 size-4.5',
+            'aria-hidden': 'true',
+        }),
+        element,
+    );
+
+    return element;
+}
+
 /** Move the map to a view, animating only once the first view has landed. */
 function showView(view: MapView, animate: boolean): void {
     const instance = map.value;
@@ -105,13 +255,8 @@ function showView(view: MapView, animate: boolean): void {
         return;
     }
 
-    instance.fitBounds(boundsOf(view), {
-        padding: 48,
-        animate,
-        // A single address geocodes to a pinpoint bbox, which would otherwise
-        // slam the camera to maximum zoom.
-        maxZoom: 16,
-    });
+    canReturnToSearch.value = false;
+    fitView(view, animate);
 
     dropMarkers();
 
@@ -124,8 +269,10 @@ function showView(view: MapView, animate: boolean): void {
     }
 
     for (const place of view.markers ?? []) {
+        const element = placeMarkerElement(view.categoryKey, place.name);
+
         placed.push(
-            new Marker({ scale: 0.8 })
+            new Marker({ element, anchor: 'bottom', offset: [0, -4] })
                 .setLngLat([place.lon, place.lat])
                 // setText, never setHTML: these names come from OpenStreetMap,
                 // which anyone can edit, so they are somebody else's input.
@@ -135,9 +282,10 @@ function showView(view: MapView, animate: boolean): void {
                     // a focus ring already drawn on its X. Keyboard users
                     // still reach it by tabbing, which is when the ring is
                     // actually telling them something.
-                    new Popup({ offset: 24, focusAfterOpen: false }).setText(
-                        place.name,
-                    ),
+                    new Popup({
+                        offset: PLACE_POPUP_OFFSET,
+                        focusAfterOpen: false,
+                    }).setText(place.name),
                 )
                 .addTo(instance),
         );
@@ -153,9 +301,55 @@ function showView(view: MapView, animate: boolean): void {
  * there is one removal path rather than a second one to forget.
  */
 function dropMarkers(): void {
-    markers.value.forEach((pin) => pin.remove());
+    markers.value.forEach((pin) => {
+        render(null, pin.getElement());
+        pin.remove();
+    });
     markers.value = [];
 }
+
+/** Center a search result and open the popup already attached to its pin. */
+function focusMarker(place: MapMarker): void {
+    const instance = map.value;
+
+    if (!instance) {
+        return;
+    }
+
+    const selected = markers.value.find((pin) => {
+        const position = pin.getLngLat();
+
+        return position.lat === place.lat && position.lng === place.lon;
+    });
+
+    if (!selected?.getPopup()) {
+        return;
+    }
+
+    canReturnToSearch.value = Boolean(props.view.markers?.length);
+    markers.value.forEach((pin) => pin.getPopup()?.remove());
+
+    instance.easeTo({
+        center: [place.lon, place.lat],
+        zoom: Math.max(instance.getZoom(), 15),
+        duration: 600,
+        essential: true,
+    });
+
+    selected.togglePopup();
+}
+
+function returnToSearch(): void {
+    if (!props.view.markers?.length) {
+        return;
+    }
+
+    markers.value.forEach((pin) => pin.getPopup()?.remove());
+    canReturnToSearch.value = false;
+    fitView(props.view, true);
+}
+
+defineExpose({ focusMarker });
 
 /**
  * Report where the map ended up, so the assistant can answer "what about
@@ -208,6 +402,11 @@ onMounted(() => {
     // moveend covers both the camera the conversation sets and the visitor
     // dragging it, so one listener keeps the reported viewport honest.
     instance.on('moveend', reportViewport);
+    instance.on('movestart', (event) => {
+        if (event.originalEvent && props.view.markers?.length) {
+            canReturnToSearch.value = true;
+        }
+    });
     instance.on('style.load', () => addBuildings(instance));
     instance.on('load', () => showView(props.view, false));
 });
@@ -363,6 +562,18 @@ useMutationObserver(
                 <IconBuilding class="size-4" />
             </Button>
         </div>
+
+        <Button
+            v-if="canReturnToSearch"
+            variant="secondary"
+            size="icon"
+            :class="[controlClass, 'absolute top-27 right-2.5 z-10']"
+            :aria-label="$t('Return to search results')"
+            data-testid="map-return-to-search"
+            @click="returnToSearch"
+        >
+            <IconScan class="size-4" />
+        </Button>
     </div>
 </template>
 
@@ -414,6 +625,30 @@ useMutationObserver(
 
 .maplibregl-popup-anchor-right .maplibregl-popup-tip {
     border-left-color: var(--popover);
+}
+
+/*
+ * Pull the triangle one pixel into the bordered card. Without the overlap the
+ * content border draws a hairline straight across the base of the arrow.
+ */
+.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+    margin-bottom: -1px;
+}
+
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+    margin-top: -1px;
+}
+
+.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+    margin-right: -1px;
+}
+
+.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+    margin-left: -1px;
 }
 
 .maplibregl-popup-close-button {

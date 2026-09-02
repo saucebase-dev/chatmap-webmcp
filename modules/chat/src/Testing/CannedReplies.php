@@ -91,6 +91,7 @@ class CannedReplies
 
         yield from $this->tool(FindPlaces::NAME, ['category' => 'cafe', 'area' => 'Shibuya, Tokyo'], json_encode([
             'label' => 'Cafes in Shibuya, Tokyo, Japan',
+            'categoryKey' => 'cafe',
             'category' => 'cafes',
             'bbox' => ['139.6613', '35.6281', '139.7239', '35.6924'],
             'markers' => [

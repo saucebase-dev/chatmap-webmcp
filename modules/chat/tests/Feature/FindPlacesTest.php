@@ -40,6 +40,7 @@ class FindPlacesTest extends TestCase
 
         $this->assertSame([
             'label' => 'Pubs in Galway, Ireland',
+            'categoryKey' => 'pub',
             'category' => 'pubs',
             'bbox' => ['-9.1000', '53.2500', '-9.0000', '53.3000'],
             'markers' => [

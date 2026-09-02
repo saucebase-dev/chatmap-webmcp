@@ -1,5 +1,9 @@
 import { BrainIcon, CogIcon, MapPinIcon, MapPinnedIcon } from '@lucide/vue';
-import { toMapView, type MapView } from '@modules/chat/resources/js/map';
+import {
+    toMapView,
+    type MapMarker,
+    type MapView,
+} from '@modules/chat/resources/js/map';
 import type { Component } from 'vue';
 
 /**
@@ -21,7 +25,10 @@ export type ThoughtPart = {
 /** What renders inside a step, mapped to the chain-of-thought body components. */
 export type ThoughtBody =
     | { kind: 'markdown'; text: string }
-    | { kind: 'results'; items: string[] }
+    | {
+          kind: 'results';
+          items: Array<{ label: string; marker: MapMarker }>;
+      }
     | { kind: 'image'; src: string; caption?: string };
 
 export type ThoughtKind = {
@@ -103,13 +110,19 @@ export const THOUGHT_KINDS: Record<string, ThoughtKind> = {
             count: countOf(toMapView(part.output)),
         }),
         description: (part) => toMapView(part.output)?.label,
-        // Reuses the `results` body the registry already had rather than
-        // inventing a fourth shape: a list of names is exactly what it draws.
+        // Keep the marker with its label so the result can drive the map as
+        // well as describe what the search found.
         body: (part) => {
             const found = toMapView(part.output)?.markers ?? [];
 
             return found.length
-                ? { kind: 'results', items: found.map((place) => place.name) }
+                ? {
+                      kind: 'results',
+                      items: found.map((marker) => ({
+                          label: marker.name,
+                          marker,
+                      })),
+                  }
                 : undefined;
         },
     },

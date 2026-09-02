@@ -123,6 +123,9 @@ class FindPlaces implements Tool
 
         return json_encode([
             'label' => ucfirst($this->label($category))." in {$bounds['label']}",
+            // Stable machine value for choosing the matching map symbol. Keep
+            // this separate from the plural display copy below.
+            'categoryKey' => $category,
             // Named for the browser as well as the model: the step beside the
             // map would otherwise have to pluralise the raw category itself,
             // and "church" and "pharmacy" do not take a bare s.

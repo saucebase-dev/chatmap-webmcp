@@ -54,6 +54,7 @@ import {
     toMapView,
     viewKey,
     MAP_TOOLS,
+    type MapMarker,
     type MapView,
     type MapViewport,
 } from '@modules/chat/resources/js/map';
@@ -245,6 +246,16 @@ const mapView = computed<MapView>(
  * fresh chat is a question the assistant should be able to answer.
  */
 const viewport = ref<MapViewport | null>(null);
+
+type ContextMapHandle = {
+    focusMarker: (marker: MapMarker) => void;
+};
+
+const contextMap = ref<ContextMapHandle | null>(null);
+
+function focusMapMarker(marker: MapMarker): void {
+    contextMap.value?.focusMarker(marker);
+}
 
 const lastMessageId = computed(() => messages.value.at(-1)?.id);
 
@@ -694,9 +705,25 @@ function handleSubmit(message: PromptInputMessage) {
                                                     <ChainOfThoughtSearchResult
                                                         v-for="item in thought
                                                             .body.items"
-                                                        :key="item"
+                                                        :key="`${item.marker.lat},${item.marker.lon}`"
+                                                        as="button"
+                                                        type="button"
+                                                        class="focus-visible:ring-ring cursor-pointer transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                                                        :aria-label="
+                                                            $t(
+                                                                'Show :place on map',
+                                                                {
+                                                                    place: item.label,
+                                                                },
+                                                            )
+                                                        "
+                                                        @click="
+                                                            focusMapMarker(
+                                                                item.marker,
+                                                            )
+                                                        "
                                                     >
-                                                        {{ item }}
+                                                        {{ item.label }}
                                                     </ChainOfThoughtSearchResult>
                                                 </ChainOfThoughtSearchResults>
                                                 <ChainOfThoughtImage
@@ -815,7 +842,11 @@ function handleSubmit(message: PromptInputMessage) {
                     :min-size="20"
                     data-testid="context-pane"
                 >
-                    <ContextMap :view="mapView" @viewport="viewport = $event" />
+                    <ContextMap
+                        ref="contextMap"
+                        :view="mapView"
+                        @viewport="viewport = $event"
+                    />
                 </ResizablePanel>
             </ResizablePanelGroup>
         </div>

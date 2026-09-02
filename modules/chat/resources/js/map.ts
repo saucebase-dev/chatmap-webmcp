@@ -38,6 +38,8 @@ export type MapView = {
     marker?: [string, string];
     /** Everything of one kind in an area, from FindPlaces. */
     markers?: MapMarker[];
+    /** Stable FindPlaces category used to select a map symbol. */
+    categoryKey?: string;
     /** What was searched for, already pluralised by the tool. */
     category?: string;
 };
