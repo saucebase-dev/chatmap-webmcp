@@ -6,6 +6,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Tools\Request;
+use Modules\Chat\Ai\Tools\FindPlaces;
 use Modules\Chat\Ai\Tools\SaveItinerary;
 use Modules\Chat\Models\OnboardingState;
 use Tests\TestCase;
@@ -57,10 +58,43 @@ class SaveItineraryTest extends TestCase
         });
     }
 
-    protected function state(?array $plan = null): OnboardingState
+    /**
+     * Run find_places so the given viewpoint coordinates gain server provenance.
+     *
+     * @param  list<array{float, float}>  $points
+     */
+    protected function findViewpoints(array $points): void
+    {
+        Http::fake([
+            'nominatim.openstreetmap.org/*' => Http::sequence()
+                ->push([[
+                    'lat' => '41.15',
+                    'lon' => '-8.61',
+                    'display_name' => 'Porto, Portugal',
+                    'boundingbox' => ['41.1000', '41.2000', '-8.7000', '-8.5000'],
+                ]])
+                ->push([]),
+            'overpass-api.de/*' => Http::response(['elements' => array_map(
+                fn (array $point): array => [
+                    'type' => 'node',
+                    'lat' => $point[0],
+                    'lon' => $point[1],
+                    'tags' => ['tourism' => 'viewpoint'],
+                ],
+                $points,
+            )]),
+        ]);
+
+        (new FindPlaces('conversation-1'))->handle(new Request([
+            'category' => 'viewpoint',
+            'area' => 'Porto, Portugal',
+        ]));
+    }
+
+    protected function state(?array $plan = null, string $conversationId = 'conversation-1'): OnboardingState
     {
         return OnboardingState::create([
-            'conversation_id' => 'conversation-1',
+            'conversation_id' => $conversationId,
             'phase' => 'mapping',
             'plan' => $plan ?? [
                 'goal' => 'A rainy Sunday',
@@ -245,12 +279,12 @@ class SaveItineraryTest extends TestCase
         $this->assertArrayNotHasKey('unplaced', $result);
     }
 
-    public function test_it_falls_back_to_the_marker_coordinates_for_a_nameless_place(): void
+    public function test_it_accepts_coordinates_find_places_issued_to_the_conversation(): void
     {
-        // Unnamed viewpoints have no string a geocoder can find, so without
-        // this the model can only offer the name of the area and a day of
-        // lookouts collapses onto one point in the middle of it.
-        $this->fakeGeocoder(['Porto' => [41.15, -8.61]]);
+        $this->findViewpoints([
+            [41.1461, -8.6112],
+            [41.1479, -8.6135],
+        ]);
 
         $result = json_decode((string) (new SaveItinerary($this->state()))->handle(new Request([
             'stops' => [
@@ -265,35 +299,71 @@ class SaveItineraryTest extends TestCase
         );
     }
 
-    public function test_it_still_refuses_coordinates_that_are_nowhere_near_the_plan(): void
+    public function test_it_rejects_fabricated_coordinates_that_find_places_did_not_issue(): void
     {
-        // The fallback is a copy of a find_places result, not a licence to
-        // invent: the area check is what keeps it honest.
         $this->fakeGeocoder(['Porto' => [41.15, -8.61]]);
+        $state = $this->state();
+
+        $result = (string) (new SaveItinerary($state))->handle(new Request([
+            'stops' => [[
+                'title' => 'Invented café',
+                'place' => 'Invented cafe, Porto, Portugal',
+                'lat' => 41.145,
+                'lon' => -8.61,
+            ]],
+        ]));
+
+        $this->assertStringContainsString('No stop could be placed', $result);
+        $this->assertStringContainsString('Invented cafe, Porto, Portugal (not found)', $result);
+        $this->assertArrayNotHasKey('stops', $state->fresh()->plan);
+    }
+
+    public function test_it_does_not_share_issued_coordinates_between_conversations(): void
+    {
+        $this->findViewpoints([[41.1461, -8.6112]]);
+        $state = $this->state(conversationId: 'conversation-2');
+
+        $result = (string) (new SaveItinerary($state))->handle(new Request([
+            'stops' => [[
+                'title' => 'Lookout',
+                'place' => 'Viewpoint 1',
+                'lat' => 41.1461,
+                'lon' => -8.6112,
+            ]],
+        ]));
+
+        $this->assertStringContainsString('Viewpoint 1 (not found)', $result);
+        $this->assertArrayNotHasKey('stops', $state->fresh()->plan);
+    }
+
+    public function test_it_refuses_issued_coordinates_that_are_nowhere_near_the_plan(): void
+    {
+        $this->findViewpoints([[0.5, 0.5]]);
 
         $result = json_decode((string) (new SaveItinerary($this->state()))->handle(new Request([
             'stops' => [
                 ['title' => 'Real', 'place' => 'Porto, Portugal'],
-                ['title' => 'Invented', 'place' => 'Viewpoint 9', 'lat' => 0.5, 'lon' => 0.5],
+                ['title' => 'Outlier', 'place' => 'Viewpoint 1', 'lat' => 0.5, 'lon' => 0.5],
             ],
         ])), true);
 
         $this->assertCount(1, $result['stops']);
-        $this->assertStringContainsString('too far from Porto, Portugal', $result['unplaced'][0]);
+        $this->assertSame(['Viewpoint 1 (found, but too far from Porto, Portugal)'], $result['unplaced']);
     }
 
     public function test_it_refuses_a_day_scattered_across_the_world(): void
     {
-        // "Viewpoint 1" is not unfindable, it is worse: the geocoder matches
-        // somewhere of that name in Brazil. Three stops on three continents
-        // are bad coordinates, not a day trip, and must not pass as one.
-        $this->fakeGeocoder(['Porto' => [41.15, -8.61]]);
+        $this->findViewpoints([
+            [-20.1015, -43.5005],
+            [50.9155, -115.1483],
+            [43.7283, -73.4986],
+        ]);
 
         $result = (string) (new SaveItinerary($this->state()))->handle(new Request([
             'stops' => [
                 ['title' => 'One', 'place' => 'Viewpoint 1', 'lat' => -20.1015, 'lon' => -43.5005],
-                ['title' => 'Two', 'place' => 'Viewpoint 4', 'lat' => 50.9155, 'lon' => -115.1483],
-                ['title' => 'Three', 'place' => 'Viewpoint 8', 'lat' => 43.7283, 'lon' => -73.4986],
+                ['title' => 'Two', 'place' => 'Viewpoint 2', 'lat' => 50.9155, 'lon' => -115.1483],
+                ['title' => 'Three', 'place' => 'Viewpoint 3', 'lat' => 43.7283, 'lon' => -73.4986],
             ],
         ]));
 

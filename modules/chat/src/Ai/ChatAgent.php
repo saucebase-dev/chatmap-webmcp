@@ -78,7 +78,7 @@ class ChatAgent implements Agent, HasProviderOptions, HasTools, RemembersConvers
             not read coordinates out loud: the visitor can already see it.
 
             When they ask what is in or around somewhere rather than where one place
-            is, use the find_places tool so the map shows up to 29 results at once.
+            is, use the find_places tool so the map shows up to 40 results at once.
             Treat them as a selection, not a complete inventory. The map already
             shows every returned pin, so summarize the selection and mention only
             the places worth singling out.
@@ -194,7 +194,7 @@ class ChatAgent implements Agent, HasProviderOptions, HasTools, RemembersConvers
 
         return [
             new ShowOnMap,
-            new FindPlaces,
+            new FindPlaces($this->onboarding === null ? null : (string) $this->onboarding->getKey()),
             new WebSearch,
             ...($this->onboarding === null ? [] : [new SaveMapReadyPlan($this->onboarding), new SaveItinerary($this->onboarding)]),
         ];

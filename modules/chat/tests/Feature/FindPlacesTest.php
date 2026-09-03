@@ -184,6 +184,11 @@ class FindPlacesTest extends TestCase
                 'addr:housenumber' => '17',
                 'addr:street' => 'Quay Street',
             ]],
+            ['type' => 'node', 'lat' => 53.274, 'lon' => -9.044, 'tags' => [
+                'amenity' => 'pub',
+                'addr:housenumber' => '17',
+                'addr:street' => 'Quay Street',
+            ]],
         ]);
 
         $result = json_decode((string) (new FindPlaces)->handle(
@@ -191,7 +196,7 @@ class FindPlacesTest extends TestCase
         ), true);
 
         $this->assertSame(
-            ['Pub at 17 Quay Street', 'Pub 1', 'Pub 2'],
+            ['Pub at 17 Quay Street #3', 'Pub at 17 Quay Street #4', 'Pub 1', 'Pub 2'],
             array_column($result['markers'], 'name'),
         );
     }

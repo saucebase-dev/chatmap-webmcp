@@ -96,6 +96,8 @@ class FindPlaces implements Tool
         'description' => 'description',
     ];
 
+    public function __construct(protected ?string $conversationId = null) {}
+
     /**
      * Get the tool's name.
      */
@@ -144,6 +146,8 @@ class FindPlaces implements Tool
         if ($places === []) {
             return "Found no {$this->label($category)} in [{$bounds['label']}]. The map was left where it was.";
         }
+
+        $this->rememberMarkers($places);
 
         return json_encode([
             'label' => ucfirst($this->label($category))." in {$bounds['label']}",
@@ -278,6 +282,46 @@ class FindPlaces implements Tool
     }
 
     /**
+     * Remember the exact points this conversation may put in an itinerary.
+     *
+     * @param  list<array{lat: float, lon: float, name: string, details?: array<string, string>}>  $markers
+     */
+    protected function rememberMarkers(array $markers): void
+    {
+        if ($this->conversationId === null) {
+            return;
+        }
+
+        foreach ($markers as $marker) {
+            Cache::put(
+                self::markerKey($this->conversationId, $marker['name'], $marker['lat'], $marker['lon']),
+                true,
+                now()->addDay(),
+            );
+        }
+    }
+
+    /**
+     * Confirm that find_places issued this exact label and point to the conversation.
+     */
+    public static function issuedMarker(string $conversationId, string $name, float $latitude, float $longitude): bool
+    {
+        return Cache::has(self::markerKey($conversationId, $name, $latitude, $longitude));
+    }
+
+    protected static function markerKey(string $conversationId, string $name, float $latitude, float $longitude): string
+    {
+        $identity = implode('|', [
+            $conversationId,
+            mb_strtolower(trim($name)),
+            sprintf('%.7F', $latitude),
+            sprintf('%.7F', $longitude),
+        ]);
+
+        return 'find-places:marker:'.hash('sha256', $identity);
+    }
+
+    /**
      * What to call a place on the pin and in the model's context.
      *
      * The English name where the map has one: the assistant and the visitor
@@ -307,7 +351,7 @@ class FindPlaces implements Tool
         $unnamed++;
 
         return isset($details['address'])
-            ? "{$kind} at {$details['address']}"
+            ? "{$kind} at {$details['address']} #{$unnamed}"
             : "{$kind} {$unnamed}";
     }
 

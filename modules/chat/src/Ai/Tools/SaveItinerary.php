@@ -271,11 +271,10 @@ class SaveItinerary implements Tool
      */
     protected function locate(string $place, array $stop): ?array
     {
-        // Coordinates win when they are offered. A made-up-looking name such as
-        // "Viewpoint 1" is not unfindable, it is worse: Nominatim happily
-        // matches somewhere of that name in Brazil, so asking it first would
-        // scatter a day across three continents rather than fail cleanly.
-        if ($given = $this->given($stop)) {
+        // Server-issued coordinates win when they are offered. A label such as
+        // "Viewpoint 1" is not unfindable, it is worse: Nominatim may match a
+        // different place of that name, scattering one day across continents.
+        if ($given = $this->given($place, $stop)) {
             return $given;
         }
 
@@ -291,12 +290,12 @@ class SaveItinerary implements Tool
     }
 
     /**
-     * The coordinates on the stop itself, if they are a real point on Earth.
+     * Coordinates previously returned by find_places for this conversation.
      *
      * @param  array<string, mixed>  $stop
      * @return array{lat: float, lon: float}|null
      */
-    protected function given(array $stop): ?array
+    protected function given(string $place, array $stop): ?array
     {
         if (! isset($stop['lat'], $stop['lon'])) {
             return null;
@@ -305,9 +304,15 @@ class SaveItinerary implements Tool
         $latitude = (float) $stop['lat'];
         $longitude = (float) $stop['lon'];
 
-        return abs($latitude) <= 90 && abs($longitude) <= 180 && ($latitude !== 0.0 || $longitude !== 0.0)
-            ? ['lat' => $latitude, 'lon' => $longitude]
-            : null;
+        $validPoint = abs($latitude) <= 90
+            && abs($longitude) <= 180
+            && ($latitude !== 0.0 || $longitude !== 0.0);
+
+        if (! $validPoint || ! FindPlaces::issuedMarker((string) $this->state->getKey(), $place, $latitude, $longitude)) {
+            return null;
+        }
+
+        return ['lat' => $latitude, 'lon' => $longitude];
     }
 
     /**

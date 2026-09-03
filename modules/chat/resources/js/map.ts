@@ -102,7 +102,7 @@ export function viewKey(view: MapView): string {
     // Stops belong to the identity for the same reason: reordering a day, or
     // swapping one stop for another nearby, leaves the label and the box alone.
     const stops = (view.stops ?? [])
-        .map((stop) => `${stop.title}@${stop.lat},${stop.lon}`)
+        .map((stop) => JSON.stringify(stop))
         .join(';');
 
     return `${view.label}|${view.bbox.join(',')}|${pins}|${stops}`;

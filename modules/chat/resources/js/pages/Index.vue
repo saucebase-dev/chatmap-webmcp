@@ -1186,9 +1186,7 @@ watch(tripPhase, () => {
                         <div
                             class="flex items-center justify-between gap-3 px-3"
                         >
-                            <p
-                                class="text-muted-foreground font-medium"
-                            >
+                            <p class="text-muted-foreground font-medium">
                                 {{ $t('Try an idea') }}
                             </p>
                             <Button
@@ -1207,7 +1205,7 @@ watch(tripPhase, () => {
                             v-for="example in examplePrompts"
                             :key="example.text"
                             variant="ghost"
-                            class="text-muted-foreground hover:bg-muted hover:text-foreground h-auto w-full justify-start gap-3 px-3 py-1 text-left whitespace-normal cursor-pointer"
+                            class="text-muted-foreground hover:bg-muted hover:text-foreground h-auto w-full cursor-pointer justify-start gap-3 px-3 py-1 text-left whitespace-normal"
                             @click="startExample(example.text)"
                         >
                             <span class="text-base" aria-hidden="true">
