@@ -82,7 +82,6 @@ import {
     CheckIcon,
     CircleAlertIcon,
     ClipboardListIcon,
-    LoaderCircleIcon,
     RefreshCwIcon,
     RouteIcon,
 } from '@lucide/vue';
@@ -432,6 +431,16 @@ const isPreparingOnboarding = computed(
     () => isMapStaging.value && !activeQuestion.value && !activePlan.value,
 );
 
+/**
+ * "Show my map" is answered by a whole turn, not by the click.
+ *
+ * The staging card closes as soon as the phase flips, so without this the map
+ * sits empty -- or on the bare location `locate()` flew to -- while the
+ * assistant is still searching. It stays up until something is actually placed,
+ * or until the turn ends with nothing (the assistant answered in prose).
+ */
+const awaitingPlaces = ref(false);
+
 watch(
     () => props.onboarding,
     (value) => {
@@ -511,6 +520,20 @@ watch(
 const mapView = computed<MapView>(
     () => overrideView.value ?? conversationView.value,
 );
+
+// Cleared by the map filling up, or by the turn ending either way -- never left
+// to hang if the reply never places anything.
+watch([() => viewKey(mapView.value), status], () => {
+    if (!awaitingPlaces.value) {
+        return;
+    }
+
+    const placed = mapView.value.markers?.length || mapView.value.stops?.length;
+
+    if (placed || status.value === 'ready' || status.value === 'error') {
+        awaitingPlaces.value = false;
+    }
+});
 
 /**
  * Where the map is pointing, sent with every message.
@@ -853,9 +876,14 @@ useWebMcpTools(
             startTrip,
             showPlan,
             showItinerary,
-        }).filter(
-            (tool) => !tool.phases || tool.phases.includes(tripPhase.value),
-        ),
+        }).map((tool) => ({
+            // Marked rather than dropped: a phase tool is still part of what
+            // this page offers, it is simply not this moment's turn. The
+            // browser is only handed the available ones; the panel shows all
+            // of them, so the visitor can see where their agent is headed.
+            ...tool,
+            available: !tool.phases || tool.phases.includes(tripPhase.value),
+        })),
     ),
 );
 
@@ -1028,6 +1056,8 @@ async function showMap(): Promise<void> {
     }
 
     if (status.value === 'ready') {
+        awaitingPlaces.value = true;
+
         chat.sendMessage({
             text: location
                 ? `Show me places for my plan in ${location}.`
@@ -1633,7 +1663,11 @@ watch(tripPhase, () => {
                     <div class="relative size-full">
                         <ContextMap
                             ref="contextMap"
-                            :class="isMapStaging ? 'blur-md' : undefined"
+                            :class="
+                                isMapStaging || awaitingPlaces
+                                    ? 'blur-md'
+                                    : undefined
+                            "
                             :view="mapView"
                             @viewport="viewport = $event"
                         />
@@ -1647,34 +1681,26 @@ watch(tripPhase, () => {
                                 class="w-full max-w-xl shadow-lg"
                                 data-testid="onboarding-card"
                             >
-                                <PlanHeader>
+                                <PlanHeader v-if="!isPreparingOnboarding">
                                     <div class="space-y-1">
                                         <PlanTitle>
                                             {{
-                                                isPreparingOnboarding
-                                                    ? $t('Preparing your map')
-                                                    : onboardingPhase ===
-                                                        'reviewing'
-                                                      ? $t('Your map plan')
-                                                      : $t(
-                                                            'A few quick questions',
-                                                        )
+                                                onboardingPhase === 'reviewing'
+                                                    ? $t('Your map plan')
+                                                    : $t(
+                                                          'A few quick questions',
+                                                      )
                                             }}
                                         </PlanTitle>
                                         <PlanDescription>
                                             {{
-                                                isPreparingOnboarding
+                                                onboardingPhase === 'reviewing'
                                                     ? $t(
-                                                          'Getting your first question ready…',
+                                                          'Review this before opening the map.',
                                                       )
-                                                    : onboardingPhase ===
-                                                        'reviewing'
-                                                      ? $t(
-                                                            'Review this before opening the map.',
-                                                        )
-                                                      : $t(
-                                                            'A few details help make the map useful.',
-                                                        )
+                                                    : $t(
+                                                          'A few details help make the map useful.',
+                                                      )
                                             }}
                                         </PlanDescription>
                                     </div>
@@ -1683,16 +1709,9 @@ watch(tripPhase, () => {
                                 <PlanContent>
                                     <div
                                         v-if="isPreparingOnboarding"
-                                        class="text-muted-foreground flex items-center gap-3 py-3 text-sm"
+                                        class="flex items-center gap-4 py-6"
                                     >
-                                        <LoaderCircleIcon
-                                            class="text-primary size-5 animate-spin"
-                                        />
-                                        {{
-                                            $t(
-                                                'Building a few tailored questions…',
-                                            )
-                                        }}
+                                        <ThinkingIndicator size="lg" />
                                         <Button
                                             v-if="
                                                 conversationId &&
@@ -1731,6 +1750,14 @@ watch(tripPhase, () => {
                                     </Button>
                                 </PlanFooter>
                             </Plan>
+                        </div>
+
+                        <div
+                            v-if="awaitingPlaces"
+                            class="bg-background/35 absolute inset-0 z-10 grid place-items-center p-6 backdrop-blur-xs"
+                            data-testid="map-loading"
+                        >
+                            <ThinkingIndicator size="lg" />
                         </div>
 
                         <!-- Styled like ContextMap's own controls so they read

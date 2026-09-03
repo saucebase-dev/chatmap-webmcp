@@ -31,6 +31,27 @@ export const webMcpTools = computed<WebMcpTool[]>(() =>
 );
 
 /**
+ * Everything that applies to this visitor, whether or not it is live yet.
+ *
+ * Sign-in decides which tools are *ever* theirs to call, so a guest entry point
+ * is no part of a member's set and vice versa. Anything beyond that is a matter
+ * of timing, and the panel says so rather than hiding it.
+ */
+export const webMcpVisitorTools = computed<WebMcpTool[]>(() =>
+    webMcpTools.value.filter((tool) => {
+        if (tool.requiresAuth) {
+            return webMcpAuthenticated.value;
+        }
+
+        if (tool.requiresGuest) {
+            return !webMcpAuthenticated.value;
+        }
+
+        return true;
+    }),
+);
+
+/**
  * The subset actually handed to the browser right now.
  *
  * Support is part of the filter, not just a guard in the sync: on a browser
@@ -39,17 +60,7 @@ export const webMcpTools = computed<WebMcpTool[]>(() =>
  */
 export const webMcpActiveTools = computed<WebMcpTool[]>(() =>
     webMcpSupported
-        ? webMcpTools.value.filter((tool) => {
-              if (tool.requiresAuth) {
-                  return webMcpAuthenticated.value;
-              }
-
-              if (tool.requiresGuest) {
-                  return !webMcpAuthenticated.value;
-              }
-
-              return true;
-          })
+        ? webMcpVisitorTools.value.filter((tool) => tool.available !== false)
         : [],
 );
 

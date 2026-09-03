@@ -1,16 +1,31 @@
 <script setup lang="ts">
 import { Shimmer } from '@/components/ai-elements/shimmer';
 import {
+    BinocularsIcon,
     CompassIcon,
     FootprintsIcon,
+    LandmarkIcon,
+    MapIcon,
     MapPinIcon,
+    NavigationIcon,
     RadarIcon,
+    RouteIcon,
+    SignpostIcon,
     SparklesIcon,
     TelescopeIcon,
 } from '@lucide/vue';
 import { usePreferredReducedMotion } from '@vueuse/core';
 import { AnimatePresence, Motion } from 'motion-v';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+
+/**
+ * `lg` is for the map overlay, where the indicator is the only thing on screen
+ * and has to carry the wait on its own. Inline in the transcript it stays `sm`,
+ * beside the reply it belongs to.
+ */
+const { size = 'sm' } = defineProps<{ size?: 'sm' | 'lg' }>();
+
+const iconClass = computed(() => (size === 'lg' ? 'size-10' : 'size-4'));
 
 /**
  * What the assistant says it is doing while it works.
@@ -22,6 +37,12 @@ const VERBS = [
     { icon: FootprintsIcon, label: 'Nosing about' },
     { icon: RadarIcon, label: 'Wondering' },
     { icon: SparklesIcon, label: 'Divining' },
+    { icon: RouteIcon, label: 'Wayfinding' },
+    { icon: NavigationIcon, label: 'Plotting a course' },
+    { icon: MapIcon, label: 'Reading the map' },
+    { icon: SignpostIcon, label: 'Following the signs' },
+    { icon: LandmarkIcon, label: 'Sizing up the sights' },
+    { icon: BinocularsIcon, label: 'Having a look round' },
 ];
 
 /** Long enough to read the phrase, short enough that a wait feels tended to. */
@@ -72,15 +93,20 @@ const SPRING = { type: 'spring', stiffness: 260, damping: 22 } as const;
 
 <template>
     <span
-        class="text-muted-foreground flex items-center gap-2 text-sm"
+        class="text-muted-foreground flex items-center"
+        :class="size === 'lg' ? 'gap-4 text-xl' : 'gap-2 text-sm'"
         role="status"
         :aria-label="$t('Thinking')"
         data-testid="thinking"
     >
         <!-- Announced once by the label above; the rotation is decoration and
              would otherwise be read out every couple of seconds. -->
-        <span class="relative block size-4 shrink-0" aria-hidden="true">
-            <component :is="verb.icon" v-if="still" class="size-4" />
+        <span
+            class="relative block shrink-0"
+            :class="iconClass"
+            aria-hidden="true"
+        >
+            <component :is="verb.icon" v-if="still" :class="iconClass" />
             <AnimatePresence v-else :initial="false" mode="sync">
                 <Motion
                     :key="verb.label"
@@ -91,7 +117,7 @@ const SPRING = { type: 'spring', stiffness: 260, damping: 22 } as const;
                     :exit="LEAVE"
                     :transition="SPRING"
                 >
-                    <component :is="verb.icon" class="size-4" />
+                    <component :is="verb.icon" :class="iconClass" />
                 </Motion>
             </AnimatePresence>
         </span>

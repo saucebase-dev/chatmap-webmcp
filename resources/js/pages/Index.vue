@@ -250,7 +250,7 @@ const planningTools = [
                                             class="text-primary size-3.5"
                                             aria-hidden="true"
                                         />
-                                        {{ $t('Porto day plan') }}
+                                        {{ $t('São Paulo day plan') }}
                                     </div>
                                     <div class="w-12" />
                                 </div>
@@ -266,7 +266,7 @@ const planningTools = [
                                         >
                                             {{
                                                 $t(
-                                                    'A rainy Sunday in Porto with two kids.',
+                                                    'A rainy Sunday in São Paulo with two kids.',
                                                 )
                                             }}
                                         </div>
@@ -322,7 +322,9 @@ const planningTools = [
                                                     <span
                                                         class="bg-primary mt-1 size-1.5 shrink-0 rounded-full"
                                                     />
-                                                    {{ $t('10:00 · Museum') }}
+                                                    {{
+                                                        $t('10:00 · Pinacoteca')
+                                                    }}
                                                 </li>
                                                 <li class="flex gap-2">
                                                     <span
@@ -334,7 +336,7 @@ const planningTools = [
                                                     <span
                                                         class="bg-primary mt-1 size-1.5 shrink-0 rounded-full"
                                                     />
-                                                    {{ $t('14:00 · Market') }}
+                                                    {{ $t('14:00 · Mercadão') }}
                                                 </li>
                                             </ol>
                                         </div>
@@ -434,7 +436,7 @@ const planningTools = [
                                             1
                                         </div>
                                         <div
-                                            class="bg-secondary text-foreground absolute top-[51%] left-[76%] flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-white text-sm font-bold shadow-lg dark:border-slate-800"
+                                            class="bg-secondary text-secondary-foreground absolute top-[51%] left-[76%] flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-white text-sm font-bold shadow-lg dark:border-slate-800"
                                         >
                                             2
                                         </div>
@@ -444,7 +446,7 @@ const planningTools = [
                                             3
                                         </div>
                                         <div
-                                            class="bg-card/95 absolute right-4 bottom-4 left-4 rounded-xl border p-3 shadow-lg"
+                                            class="bg-card/95 absolute bottom-2 left-2 rounded-sm border p-2 px-3 shadow-lg"
                                         >
                                             <p
                                                 class="text-[10px] font-semibold tracking-widest uppercase"

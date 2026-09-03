@@ -19,6 +19,7 @@ import {
     webMcpAuthenticated,
     webMcpSupported,
     webMcpTools,
+    webMcpVisitorTools,
 } from '@/webmcp';
 import { trans } from 'laravel-vue-i18n';
 import { computed, onUnmounted, ref } from 'vue';
@@ -32,7 +33,11 @@ import IconPencil from '~icons/lucide/pencil';
 const copyState = ref<'idle' | 'copied' | 'failed'>('idle');
 let copyResetTimer: ReturnType<typeof setTimeout> | null = null;
 
-const listed = computed(() => webMcpActiveTools.value);
+const listed = computed(() => webMcpVisitorTools.value);
+
+const activeNames = computed(
+    () => new Set(webMcpActiveTools.value.map((tool) => tool.name)),
+);
 
 const label = computed(() =>
     webMcpSupported ? 'WebMCP tools' : 'WebMCP is available',
@@ -122,7 +127,7 @@ onUnmounted(() => {
                             <component :is="icon" class="size-4" />
                             {{ $t('WebMCP') }}
                         </DialogTitle>
-                        <DialogDescription>
+                        <DialogDescription class="p-0">
                             <template v-if="!webMcpSupported">
                                 {{
                                     $t(
@@ -225,12 +230,17 @@ onUnmounted(() => {
                     </section>
 
                     <ul
-                        class="-mx-6 max-h-80 min-h-0 overflow-y-auto px-6 py-2"
+                        class="divide-border/70 -mx-6 max-h-80 min-h-0 divide-y overflow-y-auto px-6 py-2"
                     >
                         <li
                             v-for="tool in listed"
                             :key="tool.name"
                             class="py-2"
+                            :class="
+                                activeNames.has(tool.name)
+                                    ? undefined
+                                    : 'opacity-55'
+                            "
                             :data-testid="`webmcp-tool-${tool.name}`"
                         >
                             <div class="flex items-center gap-2">
@@ -242,10 +252,23 @@ onUnmounted(() => {
                                     tool.name
                                 }}</code>
                                 <span
-                                    class="size-2 shrink-0 rounded-full bg-emerald-500"
+                                    class="size-2 shrink-0 rounded-full"
+                                    :class="
+                                        activeNames.has(tool.name)
+                                            ? 'bg-emerald-500'
+                                            : 'bg-muted-foreground/40'
+                                    "
                                     role="img"
-                                    :aria-label="$t('Connected')"
-                                    :title="$t('Connected')"
+                                    :aria-label="
+                                        activeNames.has(tool.name)
+                                            ? $t('Connected')
+                                            : $t('Available later in the trip')
+                                    "
+                                    :title="
+                                        activeNames.has(tool.name)
+                                            ? $t('Connected')
+                                            : $t('Available later in the trip')
+                                    "
                                 />
                             </div>
                             <p

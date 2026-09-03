@@ -227,3 +227,31 @@ export function itineraryView(
         stops,
     };
 }
+
+/**
+ * How far the drawn route runs, in kilometres.
+ *
+ * Great-circle distance between consecutive stops, summed. This measures the
+ * dashed line the map actually draws, not a walked path -- the same promise
+ * `routeData` makes. A routing service would give real walking distance and a
+ * different number.
+ */
+export function routeDistanceKm(stops: ItineraryStop[]): number {
+    const radians = (degrees: number) => (degrees * Math.PI) / 180;
+    const earthRadiusKm = 6371;
+
+    return stops.slice(1).reduce((total, stop, index) => {
+        const previous = stops[index];
+
+        const deltaLat = radians(stop.lat - previous.lat);
+        const deltaLon = radians(stop.lon - previous.lon);
+
+        const a =
+            Math.sin(deltaLat / 2) ** 2 +
+            Math.cos(radians(previous.lat)) *
+                Math.cos(radians(stop.lat)) *
+                Math.sin(deltaLon / 2) ** 2;
+
+        return total + 2 * earthRadiusKm * Math.asin(Math.sqrt(a));
+    }, 0);
+}

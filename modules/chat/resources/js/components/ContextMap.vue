@@ -17,6 +17,7 @@ import {
     type MapStyleId,
     type MapView,
     type MapViewport,
+    routeDistanceKm,
 } from '@modules/chat/resources/js/map';
 import {
     useMutationObserver,
@@ -25,6 +26,7 @@ import {
 } from '@vueuse/core';
 import IconBuilding from '~icons/lucide/building-2';
 import IconPalette from '~icons/lucide/palette';
+import IconRoute from '~icons/lucide/route';
 import IconScan from '~icons/lucide/scan';
 import IconAtm from '~icons/maki/bank';
 import IconBeach from '~icons/maki/beach';
@@ -65,6 +67,7 @@ import {
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
+    computed,
     h,
     onBeforeUnmount,
     onMounted,
@@ -95,6 +98,27 @@ setWorkerUrl(maplibreWorkerUrl);
 const props = defineProps<{ view: MapView }>();
 
 const emit = defineEmits<{ viewport: [MapViewport] }>();
+
+/**
+ * The badge over the map: how many stops the day has and how far it runs.
+ *
+ * Only for a real day. One stop has no route to measure, and a search result
+ * is not an itinerary at all.
+ */
+const routeSummary = computed(() => {
+    const stops = props.view.stops ?? [];
+
+    if (stops.length < 2) {
+        return null;
+    }
+
+    const km = routeDistanceKm(stops);
+
+    return {
+        stops: stops.length,
+        distance: km < 10 ? km.toFixed(1) : String(Math.round(km)),
+    };
+});
 
 // OpenFreeMap serves OpenStreetMap vector tiles with no key, no registration
 // and no usage limits, so nothing here needs credentials or a quota alarm.
@@ -800,6 +824,20 @@ useMutationObserver(
             >
                 <IconBuilding class="size-4" />
             </Button>
+        </div>
+
+        <div
+            v-if="routeSummary"
+            class="bg-card/95 text-foreground border-border absolute top-2.5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold shadow-md backdrop-blur"
+            data-testid="map-route-summary"
+        >
+            <IconRoute class="text-primary size-4" />
+            {{
+                $t(':stops stops · :distance km', {
+                    stops: routeSummary.stops,
+                    distance: routeSummary.distance,
+                })
+            }}
         </div>
 
         <Button
