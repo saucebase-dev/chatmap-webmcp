@@ -4,6 +4,7 @@ import {
     CogIcon,
     MapPinIcon,
     MapPinnedIcon,
+    RouteIcon,
 } from '@lucide/vue';
 import {
     toMapView,
@@ -127,6 +128,39 @@ export const THOUGHT_KINDS: Record<string, ThoughtKind> = {
                       items: found.map((marker) => ({
                           label: marker.name,
                           marker,
+                      })),
+                  }
+                : undefined;
+        },
+    },
+
+    'tool-save_itinerary': {
+        icon: RouteIcon,
+        label: 'Planning the day',
+        doneLabel: 'Planned :count stops',
+        failedLabel: 'Could not plan the day',
+        // Stops that would not geocode are dropped, so a result can come back
+        // well-formed and empty.
+        succeeded: (part) => Boolean(toMapView(part.output)?.stops?.length),
+        params: (part) => ({
+            count: String(toMapView(part.output)?.stops?.length ?? 0),
+        }),
+        description: (part) => toMapView(part.output)?.label,
+        // The same chips a search produces, so a stop is clickable straight
+        // from the route of thought.
+        body: (part) => {
+            const stops = toMapView(part.output)?.stops ?? [];
+
+            return stops.length
+                ? {
+                      kind: 'results',
+                      items: stops.map((stop, index) => ({
+                          label: `${index + 1}. ${stop.title}`,
+                          marker: {
+                              lat: stop.lat,
+                              lon: stop.lon,
+                              name: stop.title,
+                          },
                       })),
                   }
                 : undefined;

@@ -60,6 +60,34 @@ class GeneralSettingsTest extends TestCase
         $this->assertSame('Existing description.', $reloadedSettings->site_description);
     }
 
+    public function test_wayfinder_brand_migration_renames_the_legacy_default(): void
+    {
+        $settings = app(GeneralSettings::class);
+        $settings->site_name = 'Whatsthere';
+        $settings->save();
+
+        $migration = require database_path('settings/2026_09_03_083219_rename_whatsthere_to_wayfinder.php');
+        $migration->up();
+
+        app()->forgetInstance(GeneralSettings::class);
+
+        $this->assertSame('Wayfinder', app(GeneralSettings::class)->site_name);
+    }
+
+    public function test_wayfinder_brand_migration_preserves_a_custom_site_name(): void
+    {
+        $settings = app(GeneralSettings::class);
+        $settings->site_name = 'Custom Platform';
+        $settings->save();
+
+        $migration = require database_path('settings/2026_09_03_083219_rename_whatsthere_to_wayfinder.php');
+        $migration->up();
+
+        app()->forgetInstance(GeneralSettings::class);
+
+        $this->assertSame('Custom Platform', app(GeneralSettings::class)->site_name);
+    }
+
     public function test_administrator_can_load_general_settings_form(): void
     {
         $admin = User::factory()->create();

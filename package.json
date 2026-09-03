@@ -1,8 +1,8 @@
 {
     "$schema": "https://json.schemastore.org/package.json",
     "private": true,
-    "name": "chatmap-webmcp",
-    "description": "An AI chat about houses, locations, and what is nearby. Built on the Saucebase starter kit.",
+    "name": "wayfinder",
+    "description": "An agent-native trip planner that keeps people, AI agents, and a live map in sync through WebMCP.",
     "type": "module",
     "scripts": {
         "build": "vite build && vite build --ssr",

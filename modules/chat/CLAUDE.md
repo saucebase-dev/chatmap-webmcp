@@ -5,24 +5,24 @@ conversations, exposed to external AI agents over WebMCP.
 
 ## Key Files
 
-| Layer      | Files                                                                                                  |
-| ---------- | ------------------------------------------------------------------------------------------------------ |
-| Controller | `ChatController` (index, show, messages, stream, place)                                                |
-| Agents     | `ChatAgent` (the assistant), `ConversationTitleAgent` (names conversations)                            |
-| Tools      | `Ai/Tools/` — `ShowOnMap` (geocodes one place), `FindPlaces` (up to ten Overpass results)             |
-| Jobs       | `GenerateConversationTitle`                                                                            |
-| Provider   | `ChatServiceProvider` — shares `chat.sessions` via `shareInertiaData()`                                |
-| Pages      | `Index` (the whole UI; blank or an existing conversation)                                              |
-| Thoughts   | `resources/js/thoughts/` — `kinds.ts` (the registry), `index.ts` (`thoughtsFor()`)                     |
-| Components | `ChatSessions` (sidebar), `ContextMap`, `PlanSummary` (plan card rows), `ThinkingIndicator`, `TypewriterText` |
-| Frontend   | `resources/js/map.ts` — `MapView`, `MAP_TOOLS`, `toMapView()`, `viewKey()`                             |
-| WebMCP     | `resources/js/webmcp/chatTools.ts`                                                                     |
+| Layer      | Files                                                                                                                                               |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Controller | `ChatController` (index, show, messages, stream, place)                                                                                             |
+| Agents     | `ChatAgent` (the assistant), `ConversationTitleAgent` (names conversations)                                                                         |
+| Tools      | `Ai/Tools/` — `ShowOnMap` (geocodes one place), `FindPlaces` (up to 40 ranked Overpass results), `SaveItinerary` (the day, in order)                |
+| Jobs       | `GenerateConversationTitle`                                                                                                                         |
+| Provider   | `ChatServiceProvider` — shares `chat.sessions` via `shareInertiaData()`                                                                             |
+| Pages      | `Index` (the whole UI; blank or an existing conversation)                                                                                           |
+| Thoughts   | `resources/js/thoughts/` — `kinds.ts` (the registry), `index.ts` (`thoughtsFor()`)                                                                  |
+| Components | `ChatSessions` (sidebar), `ContextMap`, `PlanSummary` (plan card rows), `ItineraryPanel` (the day, in order), `ThinkingIndicator`, `TypewriterText` |
+| Frontend   | `resources/js/map.ts` — `MapView`, `MAP_TOOLS`, `toMapView()`, `viewKey()`                                                                          |
+| WebMCP     | `resources/js/webmcp/chatTools.ts`                                                                                                                  |
 
 Conversations live in `laravel/ai`'s `agent_conversations` /
 `agent_conversation_messages` tables. The only module-owned table is
 `onboarding_states`, one row per conversation holding the onboarding phase
 (`interviewing` → `reviewing` → `mapping`), the open question, recorded answers,
-and the map-ready plan. `InterviewVisitor` and `SaveMapReadyPlan` write it; the
+and the map-ready plan. `InterviewVisitor`, `SaveMapReadyPlan` and `SaveItinerary` write it; the
 `chat.onboarding` route moves it to `mapping` deterministically for "Skip" and
 "Show my map", so neither depends on the model doing the right thing.
 
@@ -167,6 +167,14 @@ contract are never reused accidentally.
 this". It geocodes the area through `ShowOnMap` first so there remains one place
 where a free-text name becomes a bounding box.
 
+**Unnamed places are named apart, not all alike.** OpenStreetMap is full of
+unnamed viewpoints and parks, and calling every one of them "Viewpoint" left
+seventeen pins nobody could tell apart -- and left the model with no string
+identifying one rather than another, so asked for an itinerary from them it
+reached for the name of the search itself and every stop geocoded to the same
+point. `nameFor()` uses the street where there is one ("Pub at 17 Quay Street")
+and numbers them where there is not ("Pub 1").
+
 **The model does not write the query.** `FindPlaces::CATEGORIES` is an
 allow-list of OpenStreetMap tag filters, and the schema exposes its keys as an
 enum. Nothing model-authored reaches Overpass QL, and the only other values
@@ -174,14 +182,17 @@ interpolated are bounding-box floats. A `filter` parameter the model composed
 itself would be an injection surface aimed at somebody else's donated server.
 Adding a category is one line in that array.
 
-Overpass is asked for forty results and told to `out center`; named places are
-kept first and the top ten are returned. Each marker may carry `details`
+Overpass is asked for forty results and told to `out center`; everything it
+sends back is returned, **ranked rather than truncated** -- named places first,
+then the ones carrying the most `DETAIL_TAGS`, which is the best proxy
+available for somewhere worth going. A reply that searches twice pools both
+sets, so the map can carry more than forty pins. Each marker may carry `details`
 (address, hours, website, phone, cuisine, wheelchair, outdoor seating, Wi-Fi,
 description) from an allow-list of OpenStreetMap tags. `ContextMap` renders
 them into the popup with DOM nodes, never `setHTML`, and only links to
 `http(s)` websites. The English name is preferred when the map has one.
 
-Overpass results are cached under a versioned key (`overpass:v3:`), so bump
+Overpass results are cached under a versioned key (`overpass:v4:`), so bump
 the version whenever the marker shape changes.
 
 - Ways and relations carry no top-level `lat`/`lon`; `out center` gives them a
@@ -193,6 +204,41 @@ into Clare, so results can sit outside the county named. Fixing it means
 resolving the area to an OpenStreetMap boundary and filtering on that, which is
 exact but only works for places mapped as boundaries -- free-text areas like
 "Douglas, Cork" would stop working.
+
+### The itinerary lives inside the plan
+
+`SaveItinerary` writes an ordered `stops` array into `onboarding_states.plan`
+rather than into a table of its own: the plan is the source of truth for the
+trip and everything already reads it. There is no migration, because `plan` is
+a JSON column.
+
+Two consequences worth knowing:
+
+- **It merges, it does not replace.** `SaveMapReadyPlan` always writes a
+  complete plan, so an itinerary written as a whole-plan update would drop the
+  goal — and a plan refresh that did not preserve `stops` would drop the day.
+- **The coordinates come from the geocoder, never the model**, through
+  `ShowOnMap` so there stays one place where a name becomes a point. A stop
+  that will not geocode is dropped and named back to the model in `unplaced`.
+- **A stop outside the plan's own location is dropped too.** Restaurant and
+  cafe names match somewhere of the same name in another town often enough to
+  matter, and because the box has to frame every stop, one outlier stretches it
+  over the whole region and zooms the map out to nothing. The plan's location
+  is geocoded once and padded by half its own width (minimum ~5km) so the edge
+  of town still counts. A plan with no location skips the check: a stop shown
+  in the wrong place beats one silently dropped.
+
+`save_itinerary` returns a **`MapView`** (`label`, `bbox`, `stops`), not a
+plan. That is what makes it a map tool: the pins, the dashed route and the
+camera all arrive through the same pipeline as a search, and the browser needs
+no second path. `Index.vue` therefore tracks its stops separately from the plan
+in `transcriptState` and folds them together in `activePlan`. Anything appended
+after the encoded JSON would make the result unparseable and silently leave the
+map where it was, which is why `unplaced` is a key rather than a sentence.
+
+In `mergeViews` (both copies) an itinerary **wins outright** over the searches
+in the same reply: it is the deliberate answer of the turn, not one lookup
+among several.
 
 ### Map tools are listed twice
 
@@ -213,7 +259,8 @@ the page passes a computed list filtered by the current phase, and the
 composable re-registers with the browser whenever that list changes. An agent
 inspecting the page mid-interview sees `answer_question` and `skip_interview`;
 after "Show my map" it sees `open_map` give way to `read_map_location`,
-`show_place_on_map`, `show_trip_plan` and `update_trip_plan`. `read_trip_plan`, `start_trip`,
+`show_place_on_map`, `show_trip_plan`, `update_trip_plan`, `read_itinerary`,
+`show_itinerary` and `update_itinerary`. `read_trip_plan`, `start_trip`,
 `ask_this_assistant`, `read_current_chat`, `list_chat_sessions` and
 `open_chat_session` are always offered.
 

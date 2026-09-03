@@ -16,6 +16,7 @@ use Laravel\Ai\Providers\Tools\WebSearch;
 use Laravel\Ai\ToolChoice;
 use Modules\Chat\Ai\Tools\FindPlaces;
 use Modules\Chat\Ai\Tools\InterviewVisitor;
+use Modules\Chat\Ai\Tools\SaveItinerary;
 use Modules\Chat\Ai\Tools\SaveMapReadyPlan;
 use Modules\Chat\Ai\Tools\ShowOnMap;
 use Modules\Chat\Models\OnboardingState;
@@ -77,7 +78,7 @@ class ChatAgent implements Agent, HasProviderOptions, HasTools, RemembersConvers
             not read coordinates out loud: the visitor can already see it.
 
             When they ask what is in or around somewhere rather than where one place
-            is, use the find_places tool so the map shows up to ten results at once.
+            is, use the find_places tool so the map shows up to 29 results at once.
             Treat them as a selection, not a complete inventory. The map already
             shows every returned pin, so summarize the selection and mention only
             the places worth singling out.
@@ -130,6 +131,7 @@ class ChatAgent implements Agent, HasProviderOptions, HasTools, RemembersConvers
 
 
             The visitor's plan: {$plan}. Use it to guide every search and suggestion. If they change their goal, location, or an important detail, call save_map_ready_plan with the complete updated plan as well as helping them.
+            When they ask for a day plan, an itinerary, a route, or what to do first, call save_itinerary with the stops in order, drawing on places you have already found with find_places. It replaces the whole list, so pass every stop each time, including the ones that are not changing.
             TEXT,
         };
     }
@@ -194,7 +196,7 @@ class ChatAgent implements Agent, HasProviderOptions, HasTools, RemembersConvers
             new ShowOnMap,
             new FindPlaces,
             new WebSearch,
-            ...($this->onboarding === null ? [] : [new SaveMapReadyPlan($this->onboarding)]),
+            ...($this->onboarding === null ? [] : [new SaveMapReadyPlan($this->onboarding), new SaveItinerary($this->onboarding)]),
         ];
     }
 

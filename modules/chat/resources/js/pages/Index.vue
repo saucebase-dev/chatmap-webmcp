@@ -57,13 +57,16 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { csrfToken } from '@/lib/utils';
 import { useWebMcpTools } from '@/webmcp';
 import ContextMap from '@modules/chat/resources/js/components/ContextMap.vue';
+import ItineraryPanel from '@modules/chat/resources/js/components/ItineraryPanel.vue';
 import PlanSummary from '@modules/chat/resources/js/components/PlanSummary.vue';
 import ThinkingIndicator from '@modules/chat/resources/js/components/ThinkingIndicator.vue';
 import {
+    itineraryView,
     mergeViews,
     toMapView,
     viewKey,
     MAP_TOOLS,
+    type ItineraryStop,
     type MapMarker,
     type MapView,
     type MapViewport,
@@ -80,6 +83,7 @@ import {
     CircleAlertIcon,
     ClipboardListIcon,
     LoaderCircleIcon,
+    RouteIcon,
 } from '@lucide/vue';
 import { DefaultChatTransport, type UIMessage } from 'ai';
 import {
@@ -105,6 +109,7 @@ type Onboarding = {
         goal: string;
         location: string;
         details: Record<string, string>;
+        stops?: ItineraryStop[];
     } | null;
 };
 
@@ -276,6 +281,7 @@ function toolOutput<T>(part: {
 const transcriptState = computed(() => {
     let question: Question | null = null;
     let plan: MapPlan | null = null;
+    let stops: ItineraryStop[] | null = null;
     let sawTools = false;
 
     for (const message of messages.value) {
@@ -296,11 +302,18 @@ const transcriptState = computed(() => {
                     plan = saved;
                     question = null;
                 }
+            } else if (part.type === 'tool-save_itinerary') {
+                sawTools = true;
+                // The itinerary tool answers with a map view, not a plan, so
+                // its stops are tracked apart and folded back in below.
+                stops =
+                    toolOutput<{ stops?: ItineraryStop[] }>(part)?.stops ??
+                    stops;
             }
         }
     }
 
-    return { question, plan, sawTools };
+    return { question, plan, stops, sawTools };
 });
 
 const activeQuestion = computed(
@@ -311,9 +324,15 @@ const activeQuestion = computed(
             : (onboarding.value?.current_question ?? null)),
 );
 
-const activePlan = computed(
-    () => transcriptState.value.plan ?? onboarding.value?.plan ?? null,
-);
+const activePlan = computed(() => {
+    const plan = transcriptState.value.plan ?? onboarding.value?.plan ?? null;
+    const stops = transcriptState.value.stops;
+
+    // A plan saved this turn arrives without the stops the row already holds,
+    // and stops saved this turn are newer than the row's, so the two halves are
+    // merged rather than one winning outright.
+    return plan && stops ? { ...plan, stops } : plan;
+});
 
 const onboardingPhase = computed(() => {
     if (onboarding.value?.phase === 'mapping') {
@@ -430,6 +449,16 @@ const contextMap = ref<ContextMapHandle | null>(null);
 
 function focusMapMarker(marker: MapMarker): void {
     contextMap.value?.focusMarker(marker);
+}
+
+/**
+ * Open a stop's pin from the itinerary list.
+ *
+ * A stop calls it a title where a place calls it a name, and `focusMarker`
+ * matches on coordinates anyway, so this is only the shape adapter.
+ */
+function focusStop(stop: ItineraryStop): void {
+    focusMapMarker({ lat: stop.lat, lon: stop.lon, name: stop.title });
 }
 
 const lastMessageId = computed(() => messages.value.at(-1)?.id);
@@ -743,6 +772,7 @@ useWebMcpTools(
             openMap: showMap,
             startTrip,
             showPlan,
+            showItinerary,
         }).filter(
             (tool) => !tool.phases || tool.phases.includes(tripPhase.value),
         ),
@@ -966,9 +996,62 @@ function showPlan(): void {
     planOpen.value = true;
 }
 
+/**
+ * The itinerary takes the composer's place while it is open.
+ *
+ * Same swap the interview question card uses, so the transcript above stays
+ * visible and the visitor is never taken away from the conversation.
+ */
+const itineraryOpen = ref(false);
+
+const itineraryStops = computed<ItineraryStop[]>(
+    () => activePlan.value?.stops ?? [],
+);
+
+function showItinerary(): void {
+    itineraryOpen.value = true;
+
+    // The conversation may have searched for other things since the itinerary
+    // was saved, so the map is pointed back at it rather than left wherever the
+    // last reply put it.
+    overrideView.value = itineraryView(activePlan.value) ?? overrideView.value;
+}
+
+function toggleItinerary(): void {
+    if (itineraryOpen.value) {
+        itineraryOpen.value = false;
+
+        return;
+    }
+
+    showItinerary();
+}
+
+/**
+ * Show the day as soon as the assistant has one.
+ *
+ * Keyed on the stops themselves rather than on their count, so rewriting a
+ * three-stop day into a different three-stop day still brings it forward. It
+ * does not fire for the itinerary already saved when the page loads: reopening
+ * an old conversation should land on the map, not on a panel the visitor did
+ * not ask for.
+ */
+watch(
+    () =>
+        itineraryStops.value
+            .map((stop) => `${stop.title}@${stop.lat},${stop.lon}`)
+            .join(';'),
+    (stops) => {
+        if (stops !== '') {
+            itineraryOpen.value = true;
+        }
+    },
+);
+
 // A phase change means a new card, so a stale "open" must not carry over.
 watch(tripPhase, () => {
     planOpen.value = false;
+    itineraryOpen.value = false;
 });
 </script>
 
@@ -1043,11 +1126,14 @@ watch(tripPhase, () => {
             >
                 <!-- Opens at its minimum so the map gets the room by default;
                      the divider is there for anyone who wants more text. -->
+                <!-- min-size is a percentage of the window, so on a narrow
+                     screen it still collapses the conversation to nothing. The
+                     pixel floor is what actually keeps it readable. -->
                 <ResizablePanel
                     :default-size="CHAT_MIN_SIZE"
                     :min-size="CHAT_MIN_SIZE"
                     ref="pane"
-                    class="flex flex-col"
+                    class="flex min-w-[400px] flex-col"
                     data-testid="chat-pane"
                 >
                     <AppHeader
@@ -1131,6 +1217,10 @@ watch(tripPhase, () => {
                                                     thought.description
                                                 "
                                                 :status="thought.status"
+                                                :default-open="
+                                                    thought.body?.kind !==
+                                                    'results'
+                                                "
                                                 :data-testid="`thought-${message.id}-${thought.id}`"
                                             >
                                                 <template #icon>
@@ -1372,6 +1462,40 @@ watch(tripPhase, () => {
                         </div>
                     </div>
 
+                    <!-- The itinerary takes the composer's place, exactly as
+                         the interview question does, so the conversation above
+                         it stays where the visitor left it. -->
+                    <!-- Full bleed, no card: the list scrolls against the
+                         pane's own edge, so the scrollbar sits outside the
+                         stops rather than inset within a rounded box. The
+                         header keeps its place while the list moves under it.
+                         Scrollbars are themed globally, not here. -->
+                    <div
+                        v-else-if="itineraryOpen"
+                        class="flex max-h-[45vh] min-h-0 flex-col border-t"
+                    >
+                        <div
+                            class="flex items-center justify-between gap-3 px-4 py-2"
+                        >
+                            <h2 class="text-sm font-semibold">
+                                {{ $t('Your itinerary') }}
+                            </h2>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                data-testid="close-itinerary"
+                                @click="itineraryOpen = false"
+                            >
+                                {{ $t('Close') }}
+                            </Button>
+                        </div>
+                        <ItineraryPanel
+                            :stops="itineraryStops"
+                            class="min-h-0 flex-1 overflow-y-auto"
+                            @focus="focusStop"
+                        />
+                    </div>
+
                     <div v-else class="p-4">
                         <PromptInput
                             data-testid="chat-form"
@@ -1511,27 +1635,55 @@ watch(tripPhase, () => {
                             </Plan>
                         </div>
 
-                        <!-- Styled like ContextMap's own controls so it reads as
-                             part of the map, not the chat. Pressed while the
-                             card is open, like the 3D toggle. -->
-                        <Button
-                            v-if="activePlan && !isMapStaging"
-                            variant="secondary"
-                            size="sm"
-                            class="absolute bottom-2.5 left-2.5 z-10 h-7.25 gap-1.5 rounded px-2 shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"
-                            :class="
-                                planOpen
-                                    ? 'bg-neutral-800 text-white hover:bg-neutral-700'
-                                    : 'bg-white text-neutral-800 hover:bg-neutral-100'
-                            "
-                            :aria-pressed="planOpen"
-                            data-testid="show-plan"
-                            @click="planOpen = !planOpen"
+                        <!-- Styled like ContextMap's own controls so they read
+                             as part of the map, not the chat. Pressed while the
+                             card is open, like the 3D toggle. One row rather
+                             than two absolute buttons fighting over the corner. -->
+                        <div
+                            class="absolute bottom-2.5 left-2.5 z-10 flex items-center gap-2"
                         >
-                            <ClipboardListIcon class="size-4" />
-                            {{ $t('Plan') }}
-                        </Button>
+                            <Button
+                                v-if="activePlan && !isMapStaging"
+                                variant="secondary"
+                                size="sm"
+                                class="h-7.25 gap-1.5 rounded px-2 shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"
+                                :class="
+                                    planOpen
+                                        ? 'bg-neutral-800 text-white hover:bg-neutral-700'
+                                        : 'bg-white text-neutral-800 hover:bg-neutral-100'
+                                "
+                                :aria-pressed="planOpen"
+                                data-testid="show-plan"
+                                @click="planOpen = !planOpen"
+                            >
+                                <ClipboardListIcon class="size-4" />
+                                {{ $t('Plan') }}
+                            </Button>
 
+                            <Button
+                                v-if="itineraryStops.length && !isMapStaging"
+                                variant="secondary"
+                                size="sm"
+                                class="h-7.25 gap-1.5 rounded px-2 shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"
+                                :class="
+                                    itineraryOpen
+                                        ? 'bg-neutral-800 text-white hover:bg-neutral-700'
+                                        : 'bg-white text-neutral-800 hover:bg-neutral-100'
+                                "
+                                :aria-pressed="itineraryOpen"
+                                data-testid="show-itinerary"
+                                @click="toggleItinerary"
+                            >
+                                <RouteIcon class="size-4" />
+                                {{ $t('Itinerary') }}
+                            </Button>
+                        </div>
+
+                        <!-- Sits inside the map panel, so it has to fit the
+                             map panel: the card is capped at the overlay's
+                             height and scrolls its own contents rather than
+                             growing past the bottom, which took the footer
+                             buttons off screen with it. -->
                         <div
                             v-if="activePlan && !isMapStaging && planOpen"
                             class="absolute inset-0 grid place-items-center p-6"
@@ -1539,7 +1691,7 @@ watch(tripPhase, () => {
                         >
                             <Plan
                                 :default-open="true"
-                                class="w-full max-w-xl shadow-lg"
+                                class="flex max-h-full w-full max-w-xl flex-col shadow-lg"
                                 data-testid="plan-card"
                             >
                                 <PlanHeader>
@@ -1556,7 +1708,9 @@ watch(tripPhase, () => {
                                         </PlanDescription>
                                     </div>
                                 </PlanHeader>
-                                <PlanContent>
+                                <PlanContent
+                                    class="min-h-0 flex-1 overflow-y-auto"
+                                >
                                     <PlanSummary :plan="activePlan" />
                                 </PlanContent>
                                 <PlanFooter class="justify-between">

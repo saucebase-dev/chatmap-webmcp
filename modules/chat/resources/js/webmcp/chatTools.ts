@@ -2,7 +2,7 @@ import { csrfToken } from '@/lib/utils';
 import type { WebMcpTool } from '@/webmcp';
 import type { Chat } from '@ai-sdk/vue';
 import { router } from '@inertiajs/vue3';
-import type { MapView } from '@modules/chat/resources/js/map';
+import type { ItineraryStop, MapView } from '@modules/chat/resources/js/map';
 import type { UIMessage } from 'ai';
 
 interface ChatSession {
@@ -27,6 +27,7 @@ export interface TripState {
         goal: string;
         location: string;
         details: Record<string, unknown>;
+        stops?: ItineraryStop[];
     } | null;
 }
 
@@ -49,6 +50,8 @@ interface ChatToolDeps {
     startTrip: (goal: string) => Promise<void>;
     /** Bring the plan card back over the open map. */
     showPlan: () => void;
+    /** Open the itinerary in the composer's place and point the map at it. */
+    showItinerary: () => void;
 }
 
 /** Flatten a UI message's parts down to the text an agent actually wants. */
@@ -82,6 +85,7 @@ export function chatTools({
     openMap,
     startTrip,
     showPlan,
+    showItinerary,
 }: ChatToolDeps): ChatWebMcpTool[] {
     return [
         {
@@ -321,6 +325,86 @@ export function chatTools({
                 showPlan();
 
                 return trip().plan ?? 'There is no saved plan yet.';
+            },
+        },
+        {
+            name: 'read_itinerary',
+            description:
+                "The visitor's day in the order they will do it: each stop's title, the place as the map found it, its coordinates, and a time and note where the assistant gave them. Empty until an itinerary has been built.",
+            inputSchema: { type: 'object', properties: {} },
+            readOnly: true,
+            requiresAuth: true,
+            phases: ['mapping'],
+            execute: () => {
+                const stops = trip().plan?.stops ?? [];
+
+                return stops.length
+                    ? stops
+                    : 'There is no itinerary yet. Call update_itinerary to have one built.';
+            },
+        },
+        {
+            name: 'show_itinerary',
+            description:
+                'Put the itinerary on screen over the map and move the map to cover its stops. Returns the stops. Use update_itinerary to change them.',
+            inputSchema: { type: 'object', properties: {} },
+            requiresAuth: true,
+            phases: ['mapping'],
+            execute: () => {
+                const stops = trip().plan?.stops ?? [];
+
+                if (!stops.length) {
+                    return 'There is no itinerary yet. Call update_itinerary to have one built.';
+                }
+
+                showItinerary();
+
+                return stops;
+            },
+        },
+        {
+            name: 'update_itinerary',
+            description:
+                'Ask the assistant to build or change the itinerary, described in plain language, e.g. "add a lunch stop near the museum" or "plan my Sunday with three indoor stops". Builds the first itinerary when there is none. Waits for the reply, so read_itinerary afterwards returns the new day.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    change: {
+                        type: 'string',
+                        description:
+                            'What the itinerary should become, or what to change about it.',
+                    },
+                },
+                required: ['change'],
+            },
+            requiresAuth: true,
+            phases: ['mapping'],
+            execute: async (args) => {
+                const change = String(args.change ?? '').trim();
+
+                if (!change) {
+                    return 'Describe what the itinerary should become.';
+                }
+
+                const before = JSON.stringify(trip().plan?.stops ?? []);
+
+                await send(`Update my itinerary: ${change}`);
+
+                const stops = trip().plan?.stops ?? [];
+
+                // The assistant can decline, and the server drops stops it
+                // cannot place. Returning the stop list either way reads as
+                // success, so an agent would have to diff it to notice its
+                // instruction went nowhere. Its reason is in the reply.
+                if (JSON.stringify(stops) === before) {
+                    const reply = chat.messages.at(-1);
+
+                    return `The itinerary did not change. The assistant said: ${
+                        reply ? textOf(reply) : 'nothing.'
+                    }`;
+                }
+
+                return stops;
             },
         },
         {

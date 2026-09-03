@@ -1,64 +1,50 @@
-# Contributing to Saucebase
+# Contributing to Wayfinder
 
-Thank you for improving Saucebase. Contributions may target the framework-neutral
-core, one or both frontend stacks, documentation, tests, or module tooling.
+Thank you for improving Wayfinder. Contributions may target trip planning,
+WebMCP tools, the AI place assistant, the map experience, documentation, tests,
+or the modular Laravel foundation.
 
 ## Before you start
 
-Requirements are defined by the manifests:
+Requirements are defined by the root manifests:
 
 - PHP `^8.4` and Composer dependencies in `composer.json`
-- Node `>=22.12.0` and npm `>=10.5.1` in each stack manifest
-- Vue and React dependencies in `stubs/saucebase/stack/vue/package.json` and
-  `stubs/saucebase/stack/react/package.json`
+- Frontend dependencies and commands in `package.json`
 
-The root `package.json` is intentionally minimal before a frontend is selected.
-Use the Saucebase CLI to prepare a contributor stack:
-
-```bash
-saucebase stack vue --dev
-# or
-saucebase stack react --dev
-```
-
-Contributor mode retains both framework source trees and generates thin root
-entry-point passthroughs. Edit `resources/js/vue/` or `resources/js/react/`,
-not generated root entry points. Shared frontend changes must work with both
-stacks.
+Wayfinder is Vue-only. Application pages live in `resources/js/`; module-owned
+pages and components live under each module's `resources/js/` directory.
 
 Install dependencies and prepare the application:
 
 ```bash
-composer install
 cp .env.example .env
-php artisan key:generate
-php artisan migrate
-npm install
+# Add OPENAI_API_KEY to .env
+composer setup
 ```
 
 Docker users may instead run:
 
 ```bash
-docker compose up -d --wait
-docker compose exec app composer install
-docker compose exec app php artisan migrate
-npm install
+docker compose up -d
+docker compose exec app composer setup
 ```
 
 ## Development
 
 ```bash
-composer dev                         # app, queue, logs, and Vite
-npm run dev                          # Vite only
-npm run build                        # production client and SSR builds
+composer dev  # app, queue, logs, and Vite
+npm run dev   # Vite only
+npm run build # production client and SSR builds
 ```
 
-Available npm scripts depend on the selected stack. The Vue and React stack
-manifests are the source of truth for frontend commands.
+The Docker development app is available at `https://localhost`. The local
+certificate may require one browser confirmation.
 
 ## Modules
 
-Create a module from the maintained recipe:
+Wayfinder is built on the Saucebase modular starter kit. Modules are installed
+under lowercase `modules/<name>/` directories and are active when installed.
+Create an application module from the maintained recipe with:
 
 ```bash
 php artisan saucebase:recipe example
@@ -71,9 +57,8 @@ module providers extend `App\Providers\ModuleServiceProvider`; `$name` and
 `$nameLower` properties are obsolete because the base provider resolves the
 module name through InterNACHI's `ModuleRegistry`.
 
-Do not bypass `module-loader.js`. It discovers module assets, translations, and
-Playwright projects. See
-`.ai/guidelines/saucebase/saucebase-core.md` for the maintained module patterns.
+Do not bypass `module-loader.js`; it discovers module assets, translations, and
+Playwright projects.
 
 ## Tests and quality checks
 
@@ -81,54 +66,47 @@ Run the smallest relevant checks while developing, then broaden coverage before
 submitting:
 
 ```bash
-php artisan test
+php artisan test --compact
 php -d memory_limit=2048M artisan test --testsuite=Modules
-composer analyse                      # Larastan/PHPStan level 5
-composer lint                         # Laravel Pint
+composer analyse
+vendor/bin/pint --dirty --format agent
 npm run lint
 npm run format:check
 npm run test:e2e
 npm run build
 ```
 
-Some npm commands are unavailable until a frontend stack is selected. User-facing
-work should include feature or E2E coverage; complex isolated logic should
-include unit coverage. E2E tests must select stable `data-testid` attributes,
-not translated text.
+User-facing E2E tests must select stable `data-testid` attributes, not translated
+text. The E2E database setup must never use `migrate:fresh` because it shares the
+development database.
+
+To exercise WebMCP manually, use ChatGPT's in-app browser or enable
+`chrome://flags/#enable-webmcp-testing` in Chrome 149+ and relaunch the browser.
 
 ## Documentation
 
 Documentation changes must be checked against implementation and manifests:
 
-- `README.md` owns the public overview, installation links, and supported stack
-  lines.
+- `README.md` owns the public overview, installation instructions, architecture,
+  and WebMCP tool inventory.
+- `docs/HACKATHON_SUBMISSION.md` owns the Devpost copy, video script, demo
+  prompts, and submission checklist.
 - `CONTRIBUTING.md` owns contributor setup and verification workflows.
-- `.ai/guidelines/` owns always-loaded agent conventions.
-- `.ai/skills/` owns task-specific agent workflows.
-- `AGENTS.md`, `CLAUDE.md`, and `boost.json` are local Laravel Boost outputs
-  and are not tracked. Run `php artisan boost:install` once after cloning.
+- `.ai/rules/` owns shared project conventions.
+- `AGENTS.md` and `CLAUDE.md` contain generated Laravel Boost instructions.
 
 Avoid repeating version tables across these files. When a dependency changes,
 update its manifest first and adjust only documentation that describes the
 affected supported version line.
 
-Change agent instructions in `.ai/`, then regenerate your local outputs:
+Change source rules in `.ai/`, then regenerate the Boost outputs:
 
 ```bash
 composer boost:update
 ```
 
-Never edit the `<laravel-boost-guidelines>` blocks in `AGENTS.md` or
-`CLAUDE.md` directly — they are overwritten on every regeneration, and they
-are not tracked, so the edit reaches nobody. `.ai/` is the only source.
-
-To pick up guidelines newly shipped by a package or module, run the Artisan
-command directly. Composer sets `COMPOSER_DEV_MODE`, which suppresses the
-discovery prompt, so `composer boost:update` cannot add new packages:
-
-```bash
-php artisan boost:update
-```
+Never edit the generated `<laravel-boost-guidelines>` blocks in `AGENTS.md` or
+`CLAUDE.md` directly because regeneration overwrites them.
 
 ## Commits and pull requests
 
@@ -143,6 +121,6 @@ The scope is optional. Allowed types are `feat`, `fix`, `docs`, `style`,
 header at or below 150 characters and do not add a body or footer. See
 `.github/COMMIT_CONVENTION.md` for examples.
 
-Pull requests should explain the problem and solution, identify affected stacks
-or modules, and list the checks run. Include screenshots for visible UI changes
-and keep unrelated changes out of the branch.
+Pull requests should explain the problem and solution, identify affected modules,
+and list the checks run. Include screenshots for visible UI changes and keep
+unrelated changes out of the branch.

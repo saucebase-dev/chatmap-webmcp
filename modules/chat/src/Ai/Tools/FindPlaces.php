@@ -69,15 +69,15 @@ class FindPlaces implements Tool
         'toilets' => '["amenity"="toilets"]',
     ];
 
-    /** How many results to put on the map and in the model's context. */
-    protected const LIMIT = 10;
-
     /**
-     * How many results to ask Overpass for, so named places can be preferred.
-     * Unnamed viewpoints and parks are common, and ten of "Viewpoint" tells
-     * the visitor nothing.
+     * How many results a search returns.
+     *
+     * One number rather than fetching more than are shown: Overpass caps the
+     * query itself, so everything it sends back reaches the map and the model,
+     * ranked rather than truncated. A reply that searches twice pools both
+     * sets, so the map can carry more than this.
      */
-    protected const FETCH = 40;
+    protected const LIMIT = 40;
 
     /**
      * The OpenStreetMap tags worth carrying to the popup and the model.
@@ -109,7 +109,7 @@ class FindPlaces implements Tool
      */
     public function description(): Stringable|string
     {
-        return 'Find up to ten places of one kind within an area and show them on the map together, e.g. pubs in Galway or castles in Bavaria. Use this for "what is around", "where can I find", and "show me the ..." questions. For a single named place, use show_on_map instead.';
+        return 'Find up to 40 places of one kind within an area and show them on the map together, e.g. pubs in Galway or castles in Bavaria. Use this for "what is around", "where can I find", and "show me the ..." questions. For a single named place, use show_on_map instead.';
     }
 
     /**
@@ -155,9 +155,7 @@ class FindPlaces implements Tool
             // and "church" and "pharmacy" do not take a bare s.
             'category' => $this->label($category),
             'bbox' => $bounds['bbox'],
-            // More are fetched than shown, so named places can be preferred;
-            // the map and the model still receive at most ten.
-            'markers' => array_slice($places, 0, self::LIMIT),
+            'markers' => $places,
             'note' => 'Each marker may carry details such as hours, address, cuisine, wheelchair access or a website. Mention the ones that matter for the visitor\'s plan, for example accessibility or opening hours.',
         ], JSON_THROW_ON_ERROR);
     }
@@ -200,7 +198,7 @@ class FindPlaces implements Tool
     {
         // Versioned: a cached answer from before markers carried details would
         // otherwise serve bare pins for a day.
-        $key = 'overpass:v3:'.$category.':'.md5(implode(',', $bbox));
+        $key = 'overpass:v4:'.$category.':'.md5(implode(',', $bbox));
 
         if (($cached = Cache::get($key)) !== null) {
             return $cached;
@@ -229,16 +227,20 @@ class FindPlaces implements Tool
      * pair would silently drop every building, which is most castles, hotels
      * and supermarkets.
      *
-     * Named places come first, so a search that finds a handful of named cafés
-     * among dozens of unnamed ones shows the ones a visitor can look up.
+     * Ranked, not truncated: named places first, then the ones OpenStreetMap
+     * knows most about. A search finding a handful of named cafés among dozens
+     * of unnamed ones shows the ones a visitor can look up, and within those
+     * the entries carrying hours, a website or an address come before the bare
+     * point somebody dropped on the map -- which is the best proxy available
+     * for somewhere worth going.
      *
      * @param  array<int, array<string, mixed>>  $elements
      * @return list<array{lat: float, lon: float, name: string, details?: array<string, string>}>
      */
     protected function toMarkers(array $elements, string $category): array
     {
-        $named = [];
-        $unnamed = [];
+        $ranked = [];
+        $unnamed = 0;
 
         foreach ($elements as $element) {
             $latitude = $element['lat'] ?? $element['center']['lat'] ?? null;
@@ -249,29 +251,64 @@ class FindPlaces implements Tool
             }
 
             $tags = (array) ($element['tags'] ?? []);
+            $details = $this->details($tags);
 
             $marker = [
                 'lat' => (float) $latitude,
                 'lon' => (float) $longitude,
-                // The English name where the map has one: the assistant and
-                // the visitor both read the pin, and neither may read kanji.
-                'name' => (string) ($tags['name:en'] ?? $tags['name'] ?? ucfirst($this->label($category, plural: false))),
+                'name' => $this->nameFor($tags, $details, $category, $unnamed),
             ];
-
-            $details = $this->details($tags);
 
             if ($details !== []) {
                 $marker['details'] = $details;
             }
 
-            if (isset($tags['name'])) {
-                $named[] = $marker;
-            } else {
-                $unnamed[] = $marker;
-            }
+            $ranked[] = [
+                'named' => isset($tags['name']),
+                'weight' => count($details),
+                'marker' => $marker,
+            ];
         }
 
-        return [...$named, ...$unnamed];
+        // Sorting is stable, so places of equal rank keep the order Overpass
+        // sent them in rather than being shuffled about by the comparison.
+        usort($ranked, fn (array $a, array $b): int => [$b['named'], $b['weight']] <=> [$a['named'], $a['weight']]);
+
+        return array_column($ranked, 'marker');
+    }
+
+    /**
+     * What to call a place on the pin and in the model's context.
+     *
+     * The English name where the map has one: the assistant and the visitor
+     * both read the pin, and neither may read kanji.
+     *
+     * Unnamed places are the awkward case. Calling every one of them
+     * "Viewpoint" leaves seventeen pins nobody can tell apart, and leaves the
+     * model with no string that identifies one rather than another -- asked
+     * for an itinerary from them it reaches for the name of the search itself,
+     * and every stop lands on the same coordinates. So they are distinguished
+     * by their street where OpenStreetMap knows one, and numbered where it
+     * does not.
+     *
+     * @param  array<string, mixed>  $tags
+     * @param  array<string, string>  $details
+     * @param  int  $unnamed  Running count, so the numbering is stable within one search.
+     */
+    protected function nameFor(array $tags, array $details, string $category, int &$unnamed): string
+    {
+        $name = $tags['name:en'] ?? $tags['name'] ?? null;
+
+        if ($name !== null) {
+            return (string) $name;
+        }
+
+        $kind = ucfirst($this->label($category, plural: false));
+        $unnamed++;
+
+        return isset($details['address'])
+            ? "{$kind} at {$details['address']}"
+            : "{$kind} {$unnamed}";
     }
 
     /**
@@ -330,7 +367,7 @@ class FindPlaces implements Tool
             '[out:json][timeout:25];nwr%s(%s);out center %d;',
             self::CATEGORIES[$category],
             $box,
-            self::FETCH
+            self::LIMIT
         );
 
         $response = Http::asForm()

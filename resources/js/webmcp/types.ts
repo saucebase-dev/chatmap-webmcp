@@ -17,8 +17,10 @@ export interface WebMcpTool {
     };
     /** Safe to call speculatively. Anything that changes state must leave this false. */
     readOnly?: boolean;
-    /** Only registered while someone is signed in; shown as locked otherwise. */
+    /** Only registered while someone is signed in. */
     requiresAuth?: boolean;
+    /** Only registered while signed out, for entry points such as authentication. */
+    requiresGuest?: boolean;
     /**
      * Return anything JSON-serialisable. Plain values are wrapped in the
      * protocol's content envelope for you.

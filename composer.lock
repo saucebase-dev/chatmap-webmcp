@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "76b01d9ff3f180b4e6a57368bf58f97e",
+    "content-hash": "3618a7a2eec1d7e9a0441491494abf97",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -5180,7 +5180,7 @@
             "dist": {
                 "type": "path",
                 "url": "modules/chat",
-                "reference": "40b4cbbd05df4608eae2e806ddf7910fa1461173"
+                "reference": "24f969e5cd0ddc6ae3d2d5c6ec049d06853cab1b"
             },
             "type": "library",
             "extra": {
@@ -5203,14 +5203,19 @@
                 }
             },
             "license": [
-                "proprietary"
+                "MIT"
             ],
             "authors": [
                 {
                     "name": "Saucebase",
                     "email": "hello@saucebase.dev"
+                },
+                {
+                    "name": "Renan Roble",
+                    "email": "renanroble@gmail.com"
                 }
             ],
+            "description": "Wayfinder's guided trip-planning, live-map, AI assistant, and WebMCP module.",
             "transport-options": {
                 "symlink": true,
                 "relative": true
@@ -7482,7 +7487,7 @@
             "dist": {
                 "type": "path",
                 "url": "modules/auth",
-                "reference": "b67ea59b90d0fe98b896c2ecc1a1eaa5b4823fad"
+                "reference": "2b50e2dc2c4fb1b8fd5d1c2460f33faa05aa3e02"
             },
             "require": {
                 "laravel/socialite": "^5.30.1",
@@ -7516,7 +7521,7 @@
                 }
             },
             "license": [
-                "proprietary"
+                "MIT"
             ],
             "authors": [
                 {
@@ -7524,7 +7529,7 @@
                     "email": "hello@saucebase.dev"
                 }
             ],
-            "description": "Authentication module for Saucebase",
+            "description": "Wayfinder authentication, social login, email verification, password reset, and impersonation module.",
             "transport-options": {
                 "symlink": true,
                 "relative": true
@@ -7647,7 +7652,7 @@
             "dist": {
                 "type": "path",
                 "url": "modules/settings",
-                "reference": "e8828cc0a0b0d15aaa3f675c02098ed1af993252"
+                "reference": "a443fe435a8acbef8cd1b01ba284848c23d6af9b"
             },
             "type": "saucebase-module",
             "extra": {
@@ -7671,7 +7676,7 @@
                 }
             },
             "license": [
-                "proprietary"
+                "MIT"
             ],
             "authors": [
                 {
@@ -7679,7 +7684,7 @@
                     "email": "hello@saucebase.dev"
                 }
             ],
-            "description": "Settings module",
+            "description": "Wayfinder user profile, avatar, password, and connected-account settings module.",
             "transport-options": {
                 "symlink": true,
                 "relative": true

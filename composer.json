@@ -1,8 +1,8 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "roble/chatmap-webmcp",
+    "name": "saucebase-dev/wayfinder",
     "type": "project",
-    "description": "An AI chat that answers questions about houses, locations, and what is nearby. Built on the Saucebase modular Laravel starter kit.",
+    "description": "Wayfinder is an agent-native trip planner that keeps people, AI agents, and a live map in sync through WebMCP.",
     "license": "MIT",
     "require": {
         "php": "^8.4",
@@ -160,7 +160,10 @@
         "laravel",
         "ai chat",
         "inertia",
-        "vue"
+        "maps",
+        "travel",
+        "vue",
+        "webmcp"
     ],
     "repositories": [
         {

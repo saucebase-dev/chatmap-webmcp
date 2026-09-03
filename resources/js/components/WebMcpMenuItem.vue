@@ -32,19 +32,7 @@ import IconPencil from '~icons/lucide/pencil';
 const copyState = ref<'idle' | 'copied' | 'failed'>('idle');
 let copyResetTimer: ReturnType<typeof setTimeout> | null = null;
 
-const activeNames = computed(
-    () => new Set(webMcpActiveTools.value.map((tool) => tool.name)),
-);
-
-// Callable tools lead; the rest still show, because their presence is the
-// argument for signing in or switching browser.
-const listed = computed(() =>
-    [...webMcpTools.value].sort(
-        (a, b) =>
-            Number(activeNames.value.has(b.name)) -
-            Number(activeNames.value.has(a.name)),
-    ),
-);
+const listed = computed(() => webMcpActiveTools.value);
 
 const label = computed(() =>
     webMcpSupported ? 'WebMCP tools' : 'WebMCP is available',
@@ -61,10 +49,9 @@ const stateColor = computed(() =>
 const chatUrl = route('chat.index');
 
 const agentPrompt = computed(() =>
-    trans(
-        "Open :url. Discover and use this page's WebMCP tools to help me",
-        { url: chatUrl },
-    ),
+    trans("Open :url. Discover and use this page's WebMCP tools to help me", {
+        url: chatUrl,
+    }),
 );
 
 async function copyAgentPrompt(): Promise<void> {
@@ -93,7 +80,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <SidebarMenu v-if="webMcpTools.length" data-testid="webmcp-menu">
+    <SidebarMenu
+        v-if="
+            webMcpTools.length && (!webMcpSupported || webMcpActiveTools.length)
+        "
+        data-testid="webmcp-menu"
+    >
         <SidebarMenuItem>
             <Dialog>
                 <DialogTrigger as-child>
@@ -141,7 +133,7 @@ onUnmounted(() => {
                             <template v-else-if="!webMcpAuthenticated">
                                 {{
                                     $t(
-                                        'Your AI agent can use these. Sign in to unlock the rest.',
+                                        'Your AI agent can open sign in or registration. Sign in to unlock trip planning tools.',
                                     )
                                 }}
                             </template>
@@ -232,14 +224,13 @@ onUnmounted(() => {
                         </p>
                     </section>
 
-                    <ul class="-mx-6 max-h-80 min-h-0 overflow-y-auto px-6 py-2">
+                    <ul
+                        class="-mx-6 max-h-80 min-h-0 overflow-y-auto px-6 py-2"
+                    >
                         <li
                             v-for="tool in listed"
                             :key="tool.name"
                             class="py-2"
-                            :class="{
-                                'opacity-50': !activeNames.has(tool.name),
-                            }"
                             :data-testid="`webmcp-tool-${tool.name}`"
                         >
                             <div class="flex items-center gap-2">
@@ -251,23 +242,10 @@ onUnmounted(() => {
                                     tool.name
                                 }}</code>
                                 <span
-                                    class="size-2 shrink-0 rounded-full"
-                                    :class="
-                                        activeNames.has(tool.name)
-                                            ? 'bg-emerald-500'
-                                            : 'bg-muted-foreground/40'
-                                    "
+                                    class="size-2 shrink-0 rounded-full bg-emerald-500"
                                     role="img"
-                                    :aria-label="
-                                        activeNames.has(tool.name)
-                                            ? $t('Connected')
-                                            : $t('Not connected')
-                                    "
-                                    :title="
-                                        activeNames.has(tool.name)
-                                            ? $t('Connected')
-                                            : $t('Not connected')
-                                    "
+                                    :aria-label="$t('Connected')"
+                                    :title="$t('Connected')"
                                 />
                             </div>
                             <p
