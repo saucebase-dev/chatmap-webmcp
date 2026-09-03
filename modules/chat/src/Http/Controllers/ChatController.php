@@ -9,15 +9,15 @@ use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Ai\Messages\Message;
+use Laravel\Ai\Messages\MessageRole;
 use Laravel\Ai\Messages\ToolResultMessage;
 use Laravel\Ai\Models\Conversation;
-use Laravel\Ai\Responses\Data\ToolResult;
 use Laravel\Ai\Tools\Request as ToolRequest;
 use Modules\Chat\Ai\ChatAgent;
-use Modules\Chat\Ai\Tools\EircodeToGeoLocation;
 use Modules\Chat\Ai\Tools\FindPlaces;
 use Modules\Chat\Ai\Tools\ShowOnMap;
 use Modules\Chat\Jobs\GenerateConversationTitle;
+use Modules\Chat\Models\OnboardingState;
 use Modules\Chat\Testing\CannedReplies;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -34,7 +34,6 @@ class ChatController
      */
     public const array MAP_TOOLS = [
         ShowOnMap::NAME,
-        EircodeToGeoLocation::NAME,
         FindPlaces::NAME,
     ];
 
@@ -47,6 +46,7 @@ class ChatController
             'conversationId' => null,
             'initialMessages' => [],
             'initialMapView' => null,
+            'onboarding' => null,
         ]);
     }
 
@@ -61,9 +61,14 @@ class ChatController
             ->continue($owned->id, $request->user())
             ->messages();
 
+        $onboarding = OnboardingState::find($owned->id);
+
         return Inertia::render('Chat::Index', [
             'conversationId' => $owned->id,
             'initialMessages' => collect($messages)
+                // Tool rows carry no prose, and an assistant turn that only
+                // asked a question would otherwise reopen as an empty bubble.
+                ->reject(fn (Message $message): bool => $message instanceof ToolResultMessage || trim((string) $message->content) === '')
                 ->values()
                 ->map(fn (Message $message, int $index): array => [
                     'id' => 'history-'.$index,
@@ -74,28 +79,132 @@ class ChatController
                 ])
                 ->all(),
             'initialMapView' => $this->lastMapView($messages),
+            'onboarding' => $onboarding?->only(['phase', 'question_count', 'current_question', 'answers', 'plan']),
         ]);
     }
 
     /**
-     * Find the place the map was last showing in this conversation.
+     * Move the onboarding phase forward without going through the model.
      *
-     * The transcript is rebuilt as plain text, so the tool call that moved the
-     * map is dropped on the way to the browser. Without this, reopening a
+     * "Skip questions", "Show my map" and "Back to planning" must be certain,
+     * so they are recorded here rather than sent as chat messages the
+     * assistant may misread. A skip before any plan exists saves the opening
+     * message as a minimal plan.
+     */
+    public function onboarding(Request $request, string $conversation): JsonResponse
+    {
+        $owned = $this->ownedConversation($request, $conversation);
+
+        $phase = $request->validate(['phase' => ['required', 'in:mapping,interviewing']])['phase'];
+
+        $state = OnboardingState::firstOrCreate(['conversation_id' => $owned->id]);
+
+        // Going back to the interview keeps the plan and the answers: the
+        // visitor wants more questions, not a fresh start.
+        $state->update([
+            'phase' => $phase,
+            'current_question' => null,
+            'plan' => $phase === 'mapping'
+                ? ($state->plan ?? ['goal' => (string) $owned->getAttribute('title'), 'location' => '', 'details' => []])
+                : $state->plan,
+        ]);
+
+        return response()->json($state->only(['phase', 'question_count', 'current_question', 'answers', 'plan']));
+    }
+
+    /**
+     * Find what the map was last showing in this conversation.
+     *
+     * The transcript is rebuilt as plain text, so the tool calls that moved the
+     * map are dropped on the way to the browser. Without this, reopening a
      * conversation snaps the map back to its default while the messages beside
      * it still discuss somewhere else.
+     *
+     * Views are grouped per reply, and searches in the last reply are pooled
+     * the same way the browser pools them live, so a refresh shows the same
+     * pins the visitor was just looking at.
      *
      * @param  iterable<Message>  $messages
      * @return array<string, mixed>|null
      */
     protected function lastMapView(iterable $messages): ?array
     {
-        return collect($messages)
-            ->filter(fn (Message $message): bool => $message instanceof ToolResultMessage)
-            ->flatMap(fn (ToolResultMessage $message): array => $message->toolResults->all())
-            ->filter(fn (ToolResult $result): bool => in_array($result->name, self::MAP_TOOLS, true))
-            ->map(fn (ToolResult $result): mixed => json_decode((string) $result->result, true))
-            ->last(fn (mixed $view): bool => is_array($view) && isset($view['bbox']));
+        $replies = [];
+        $current = [];
+
+        foreach ($messages as $message) {
+            // Matched on the role: the store rehydrates history as generic
+            // messages, so an instanceof check on UserMessage never fires.
+            if ($message->role === MessageRole::User) {
+                if ($current !== []) {
+                    $replies[] = $current;
+                }
+                $current = [];
+
+                continue;
+            }
+
+            if (! $message instanceof ToolResultMessage) {
+                continue;
+            }
+
+            foreach ($message->toolResults->all() as $result) {
+                if (! in_array($result->name, self::MAP_TOOLS, true)) {
+                    continue;
+                }
+
+                $view = json_decode((string) $result->result, true);
+
+                if (is_array($view) && isset($view['bbox'])) {
+                    $current[] = $view;
+                }
+            }
+        }
+
+        if ($current !== []) {
+            $replies[] = $current;
+        }
+
+        return $replies === [] ? null : $this->mergeViews(end($replies));
+    }
+
+    /**
+     * Pool the searches of one reply into a single view. Mirrors `mergeViews()`
+     * in `map.ts`: searches win over a bare placement, and their pins are combined.
+     *
+     * @param  list<array<string, mixed>>  $views
+     * @return array<string, mixed>
+     */
+    protected function mergeViews(array $views): array
+    {
+        $searches = array_values(array_filter($views, fn (array $view): bool => ! empty($view['markers'])));
+
+        if (count($searches) <= 1) {
+            return $searches[0] ?? end($views);
+        }
+
+        $markers = [];
+        $lons = [];
+        $lats = [];
+
+        foreach ($searches as $view) {
+            foreach ($view['markers'] as $marker) {
+                $markers[] = $marker + ['categoryKey' => $view['categoryKey'] ?? null];
+            }
+
+            array_push($lons, (float) $view['bbox'][0], (float) $view['bbox'][2]);
+            array_push($lats, (float) $view['bbox'][1], (float) $view['bbox'][3]);
+        }
+
+        $area = Str::after($searches[0]['label'], ' in ');
+        $categories = implode(' and ', array_map(fn (array $view): string => $view['category'] ?? $view['label'], $searches));
+
+        return [
+            'label' => $area === $searches[0]['label'] ? $categories : "{$categories} in {$area}",
+            'category' => $categories,
+            'bbox' => [(string) min($lons), (string) min($lats), (string) max($lons), (string) max($lats)],
+            'markers' => $markers,
+        ];
     }
 
     /**
@@ -174,11 +283,22 @@ class ChatController
             ? $this->ownedConversation($request, $validated['conversation_id'])
             : $this->startConversation($request, $validated['message']);
 
+        $onboarding = OnboardingState::firstOrCreate(['conversation_id' => $conversation->id]);
+
+        // Whatever is typed while a question is open answers that question, so
+        // the row stops advertising it and the model can see it was answered.
+        if ($onboarding->current_question !== null) {
+            $onboarding->update([
+                'answers' => [...($onboarding->answers ?? []), ['question' => $onboarding->current_question['question'], 'answer' => $validated['message']]],
+                'current_question' => null,
+            ]);
+        }
+
         if ($this->inTestMode()) {
             return $this->cannedStream($request, $conversation->id);
         }
 
-        $stream = (new ChatAgent($validated['map'] ?? null))
+        $stream = (new ChatAgent($validated['map'] ?? null, $onboarding))
             ->continue($conversation->id, $request->user())
             ->stream($validated['message'])
             ->then(function () use ($conversation): void {

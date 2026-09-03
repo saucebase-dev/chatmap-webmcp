@@ -14,18 +14,13 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 /**
  * What the assistant says it is doing while it works.
- *
- * Deliberately about looking for places rather than about computing, because
- * that is what this assistant does. Keep the list short: these are a flourish,
- * and a long rotation starts reading as a slot machine. "Whatsthering" is the
- * one gag, and stays the only one.
  */
 const VERBS = [
     { icon: TelescopeIcon, label: 'Scouting' },
     { icon: MapPinIcon, label: 'Pinpointing' },
     { icon: CompassIcon, label: 'Getting our bearings' },
     { icon: FootprintsIcon, label: 'Nosing about' },
-    { icon: RadarIcon, label: 'Whatsthering' },
+    { icon: RadarIcon, label: 'Wondering' },
     { icon: SparklesIcon, label: 'Divining' },
 ];
 

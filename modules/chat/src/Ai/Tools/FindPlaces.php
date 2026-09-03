@@ -69,14 +69,32 @@ class FindPlaces implements Tool
         'toilets' => '["amenity"="toilets"]',
     ];
 
+    /** How many results to put on the map and in the model's context. */
+    protected const LIMIT = 10;
+
     /**
-     * How many results to put on the map.
-     *
-     * Overpass applies this itself, so an area thick with pubs costs one
-     * capped response rather than a thousand rows we then throw away. It also
-     * caps what lands in the model's context, since the tool result is context.
+     * How many results to ask Overpass for, so named places can be preferred.
+     * Unnamed viewpoints and parks are common, and ten of "Viewpoint" tells
+     * the visitor nothing.
      */
-    protected const LIMIT = 40;
+    protected const FETCH = 40;
+
+    /**
+     * The OpenStreetMap tags worth carrying to the popup and the model.
+     * Everything else is dropped: the result is context as well as map data.
+     */
+    protected const array DETAIL_TAGS = [
+        'opening_hours' => 'hours',
+        'website' => 'website',
+        'contact:website' => 'website',
+        'phone' => 'phone',
+        'contact:phone' => 'phone',
+        'cuisine' => 'cuisine',
+        'wheelchair' => 'wheelchair',
+        'outdoor_seating' => 'outdoor_seating',
+        'internet_access' => 'internet_access',
+        'description' => 'description',
+    ];
 
     /**
      * Get the tool's name.
@@ -91,7 +109,7 @@ class FindPlaces implements Tool
      */
     public function description(): Stringable|string
     {
-        return 'Find all the places of one kind within an area of Ireland and show them on the map together, e.g. every pub in Galway or every castle in Kerry. Use this for "what is around", "where can I find", and "show me the ..." questions. For a single named place, use show_on_map instead.';
+        return 'Find up to ten places of one kind within an area and show them on the map together, e.g. pubs in Galway or castles in Bavaria. Use this for "what is around", "where can I find", and "show me the ..." questions. For a single named place, use show_on_map instead.';
     }
 
     /**
@@ -110,9 +128,7 @@ class FindPlaces implements Tool
             return 'No area was given, so the map was left where it was.';
         }
 
-        // Reuses ShowOnMap rather than geocoding again, which is also what
-        // keeps this inside Ireland: that lookup is pinned to countrycodes=ie,
-        // so an area outside it never resolves to a box to search.
+        // Reuses ShowOnMap rather than maintaining a second geocoding path.
         $bounds = $this->boundsOf($area);
 
         if ($bounds === null) {
@@ -129,21 +145,21 @@ class FindPlaces implements Tool
             return "Found no {$this->label($category)} in [{$bounds['label']}]. The map was left where it was.";
         }
 
-        // Overpass was asked for one more than the cap, so an overflow means
-        // there are others we are not showing. Saying "40" when the real answer
-        // is "at least 40" is the tool lying through the assistant.
-        $capped = count($places) > self::LIMIT;
-
-        return json_encode(array_filter([
+        return json_encode([
             'label' => ucfirst($this->label($category))." in {$bounds['label']}",
+            // Stable machine value for choosing the matching map symbol. Keep
+            // this separate from the plural display copy below.
+            'categoryKey' => $category,
             // Named for the browser as well as the model: the step beside the
             // map would otherwise have to pluralise the raw category itself,
             // and "church" and "pharmacy" do not take a bare s.
             'category' => $this->label($category),
             'bbox' => $bounds['bbox'],
+            // More are fetched than shown, so named places can be preferred;
+            // the map and the model still receive at most ten.
             'markers' => array_slice($places, 0, self::LIMIT),
-            'capped' => $capped,
-        ]), JSON_THROW_ON_ERROR);
+            'note' => 'Each marker may carry details such as hours, address, cuisine, wheelchair access or a website. Mention the ones that matter for the visitor\'s plan, for example accessibility or opening hours.',
+        ], JSON_THROW_ON_ERROR);
     }
 
     /**
@@ -182,7 +198,9 @@ class FindPlaces implements Tool
      */
     protected function search(string $category, array $bbox): ?array
     {
-        $key = 'overpass:'.$category.':'.md5(implode(',', $bbox));
+        // Versioned: a cached answer from before markers carried details would
+        // otherwise serve bare pins for a day.
+        $key = 'overpass:v3:'.$category.':'.md5(implode(',', $bbox));
 
         if (($cached = Cache::get($key)) !== null) {
             return $cached;
@@ -211,12 +229,16 @@ class FindPlaces implements Tool
      * pair would silently drop every building, which is most castles, hotels
      * and supermarkets.
      *
+     * Named places come first, so a search that finds a handful of named cafés
+     * among dozens of unnamed ones shows the ones a visitor can look up.
+     *
      * @param  array<int, array<string, mixed>>  $elements
-     * @return list<array{lat: float, lon: float, name: string}>
+     * @return list<array{lat: float, lon: float, name: string, details?: array<string, string>}>
      */
     protected function toMarkers(array $elements, string $category): array
     {
-        $markers = [];
+        $named = [];
+        $unnamed = [];
 
         foreach ($elements as $element) {
             $latitude = $element['lat'] ?? $element['center']['lat'] ?? null;
@@ -226,17 +248,61 @@ class FindPlaces implements Tool
                 continue;
             }
 
-            // Every other OpenStreetMap tag is dropped here. The result is the
-            // model's context as well as the map's data, and a marker needs a
-            // point and something to call it.
-            $markers[] = [
+            $tags = (array) ($element['tags'] ?? []);
+
+            $marker = [
                 'lat' => (float) $latitude,
                 'lon' => (float) $longitude,
-                'name' => (string) ($element['tags']['name'] ?? ucfirst($this->label($category, plural: false))),
+                // The English name where the map has one: the assistant and
+                // the visitor both read the pin, and neither may read kanji.
+                'name' => (string) ($tags['name:en'] ?? $tags['name'] ?? ucfirst($this->label($category, plural: false))),
             ];
+
+            $details = $this->details($tags);
+
+            if ($details !== []) {
+                $marker['details'] = $details;
+            }
+
+            if (isset($tags['name'])) {
+                $named[] = $marker;
+            } else {
+                $unnamed[] = $marker;
+            }
         }
 
-        return $markers;
+        return [...$named, ...$unnamed];
+    }
+
+    /**
+     * Pick out the tags a visitor can act on, under stable short keys.
+     *
+     * @param  array<string, mixed>  $tags
+     * @return array<string, string>
+     */
+    protected function details(array $tags): array
+    {
+        $details = [];
+
+        foreach (self::DETAIL_TAGS as $tag => $key) {
+            $value = trim((string) ($tags[$tag] ?? ''));
+
+            if ($value !== '' && ! isset($details[$key])) {
+                $details[$key] = mb_substr($value, 0, 200);
+            }
+        }
+
+        // A house number is only an address next to its street.
+        $street = isset($tags['addr:street'])
+            ? trim(($tags['addr:housenumber'] ?? '').' '.$tags['addr:street'])
+            : '';
+        $address = trim(implode(', ', array_filter([$street, $tags['addr:city'] ?? null])));
+
+        if ($address !== '') {
+            $details = ['address' => $address] + $details;
+        }
+
+        return $details;
     }
 
     /**
@@ -260,13 +326,11 @@ class FindPlaces implements Tool
             (float) $east
         );
 
-        // One more than we mean to keep, which is how the caller can tell a
-        // full house from a coincidence and avoid reporting the cap as a total.
         $query = sprintf(
             '[out:json][timeout:25];nwr%s(%s);out center %d;',
             self::CATEGORIES[$category],
             $box,
-            self::LIMIT + 1
+            self::FETCH
         );
 
         $response = Http::asForm()
@@ -302,7 +366,7 @@ class FindPlaces implements Tool
                 ->enum(array_keys(self::CATEGORIES))
                 ->required(),
             'area' => $schema->string()
-                ->description('The town, city, county or neighbourhood in Ireland to search inside, e.g. "Galway" or "Kinsale, Cork".')
+                ->description('The town, city, region, or neighbourhood to search inside, e.g. "Galway, Ireland" or "Shinjuku, Tokyo".')
                 ->required(),
         ];
     }
