@@ -58,6 +58,7 @@ import { csrfToken } from '@/lib/utils';
 import { useWebMcpTools } from '@/webmcp';
 import ContextMap from '@modules/chat/resources/js/components/ContextMap.vue';
 import ItineraryPanel from '@modules/chat/resources/js/components/ItineraryPanel.vue';
+import PlaceLink from '@modules/chat/resources/js/components/PlaceLink.vue';
 import PlanSummary from '@modules/chat/resources/js/components/PlanSummary.vue';
 import ThinkingIndicator from '@modules/chat/resources/js/components/ThinkingIndicator.vue';
 import {
@@ -560,6 +561,97 @@ function focusMapMarker(marker: MapMarker): void {
  * A stop calls it a title where a place calls it a name, and `focusMarker`
  * matches on coordinates anyway, so this is only the shape adapter.
  */
+/**
+ * Places the map can currently be pointed at, by lowercased name.
+ *
+ * The reply names the same places the tools just put on the map, so the two
+ * are matched by name rather than by re-parsing the prose. Only what is on the
+ * map right now is linkable: an older search's pins are gone, and a link that
+ * moves the camera nowhere is worse than plain text.
+ */
+const linkablePlaces = computed(() => {
+    const places = new Map<string, MapMarker>();
+
+    for (const stop of itineraryStops.value) {
+        places.set(stop.title.toLowerCase(), {
+            lat: stop.lat,
+            lon: stop.lon,
+            name: stop.title,
+        });
+    }
+
+    for (const marker of mapView.value.markers ?? []) {
+        places.set(marker.name.toLowerCase(), marker);
+    }
+
+    return places;
+});
+
+/**
+ * Turn place names in a reply into links to their pin.
+ *
+ * A string rewrite rather than a walk over the rendered output: the markdown is
+ * re-rendered on every streamed token, so anything done to the DOM would be
+ * undone immediately. Longest names first, so "Museu Picasso Cafe" is not eaten
+ * by "Museu Picasso".
+ */
+function withPlaceLinks(text: string): string {
+    const names = [...linkablePlaces.value.values()]
+        .map((place) => place.name)
+        // Short names collide with ordinary words often enough to be noise.
+        .filter((name) => name.length > 3)
+        .sort((a, b) => b.length - a.length);
+
+    if (!names.length) {
+        return text;
+    }
+
+    const alternatives = names
+        .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('|');
+
+    // Not already inside a link, and not part of a longer word.
+    const pattern = new RegExp(
+        `(?<![\\[\\w])(${alternatives})(?![\\w\\]])`,
+        'g',
+    );
+
+    // The markdown renderer strips the href off every anchor it makes, so the
+    // target is a placeholder: what identifies the place on the way back is the
+    // link text, which is the name itself.
+    return text.replace(
+        pattern,
+        (name) => `[${name.replace(/[[\]]/g, '\\$&')}](#map)`,
+    );
+}
+
+/**
+ * One listener for the whole transcript rather than a component per link: the
+ * links are markdown output, so there is no Vue node to bind to.
+ */
+const markdownRenderers = { link: PlaceLink };
+
+function onTranscriptClick(event: MouseEvent): void {
+    const link = (event.target as HTMLElement | null)?.closest?.(
+        '[data-place]',
+    );
+
+    if (!link) {
+        return;
+    }
+
+    const place = linkablePlaces.value.get(
+        (link.textContent ?? '').trim().toLowerCase(),
+    );
+
+    if (!place) {
+        return;
+    }
+
+    event.preventDefault();
+    focusMapMarker(place);
+}
+
 function focusStop(stop: ItineraryStop): void {
     focusMapMarker({ lat: stop.lat, lon: stop.lon, name: stop.title });
 }
@@ -1272,7 +1364,10 @@ watch(tripPhase, () => {
                     />
 
                     <Conversation ref="conversation">
-                        <ConversationContent data-testid="chat-messages">
+                        <ConversationContent
+                            data-testid="chat-messages"
+                            @click="onTranscriptClick"
+                        >
                             <ConversationEmptyState
                                 v-if="!messages.length"
                                 :title="$t('Ask me anything')"
@@ -1441,13 +1536,18 @@ watch(tripPhase, () => {
                                              typewriter; the caret marks it. -->
                                         <MessageResponse
                                             v-if="part.type === 'text'"
-                                            :content="part.text"
+                                            :content="
+                                                message.role === 'assistant'
+                                                    ? withPlaceLinks(part.text)
+                                                    : part.text
+                                            "
                                             :mode="
                                                 isWriting(message)
                                                     ? 'streaming'
                                                     : 'static'
                                             "
                                             :enable-animate="false"
+                                            :node-renderers="markdownRenderers"
                                             caret="block"
                                         />
                                     </template>
@@ -1494,10 +1594,10 @@ watch(tripPhase, () => {
                         <div
                             role="group"
                             :aria-label="activeQuestion.question"
-                            class="bg-card text-card-foreground max-h-[min(62svh,42rem)] space-y-3 overflow-y-auto rounded-xl border p-4 shadow-sm"
+                            class="bg-card text-card-foreground max-h-[min(62svh,42rem)] space-y-3 overflow-y-auto rounded-xl border p-4 text-sm shadow-sm"
                             data-testid="onboarding-question"
                         >
-                            <h2 class="text-base font-semibold">
+                            <h2 class="text-sm font-semibold">
                                 {{ activeQuestion.question }}
                             </h2>
                             <p
@@ -1517,7 +1617,7 @@ watch(tripPhase, () => {
                                 :key="option"
                                 type="button"
                                 :aria-pressed="selectedAnswers.includes(option)"
-                                class="border-input hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                                class="border-input hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring flex w-full items-start gap-1 rounded-lg border p-3 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none"
                                 :class="
                                     selectedAnswers.includes(option) &&
                                     'border-primary bg-primary/5'
@@ -1675,13 +1775,37 @@ watch(tripPhase, () => {
                             v-if="isMapStaging && !activeQuestion"
                             class="bg-background/35 absolute inset-0 grid place-items-center p-6 backdrop-blur-xs"
                         >
+                            <!-- Nothing to frame yet: while the interview is
+                                 being built there is no plan to read, so the
+                                 indicator stands on the blurred map alone. -->
+                            <div
+                                v-if="isPreparingOnboarding"
+                                class="flex flex-col items-center gap-3"
+                            >
+                                <ThinkingIndicator size="lg" />
+                                <Button
+                                    v-if="
+                                        conversationId &&
+                                        status !== 'streaming' &&
+                                        status !== 'submitted'
+                                    "
+                                    variant="ghost"
+                                    size="sm"
+                                    data-testid="skip-preparing"
+                                    @click="skipInterview"
+                                >
+                                    {{ $t('Skip for now') }}
+                                </Button>
+                            </div>
+
                             <Plan
+                                v-else
                                 :default-open="true"
                                 :is-streaming="status === 'streaming'"
                                 class="w-full max-w-xl shadow-lg"
                                 data-testid="onboarding-card"
                             >
-                                <PlanHeader v-if="!isPreparingOnboarding">
+                                <PlanHeader>
                                     <div class="space-y-1">
                                         <PlanTitle>
                                             {{
@@ -1708,27 +1832,7 @@ watch(tripPhase, () => {
 
                                 <PlanContent>
                                     <div
-                                        v-if="isPreparingOnboarding"
-                                        class="flex items-center gap-4 py-6"
-                                    >
-                                        <ThinkingIndicator size="lg" />
-                                        <Button
-                                            v-if="
-                                                conversationId &&
-                                                status !== 'streaming' &&
-                                                status !== 'submitted'
-                                            "
-                                            variant="ghost"
-                                            size="sm"
-                                            class="ml-auto"
-                                            data-testid="skip-preparing"
-                                            @click="skipInterview"
-                                        >
-                                            {{ $t('Skip for now') }}
-                                        </Button>
-                                    </div>
-                                    <div
-                                        v-else-if="
+                                        v-if="
                                             onboardingPhase === 'reviewing' &&
                                             activePlan
                                         "

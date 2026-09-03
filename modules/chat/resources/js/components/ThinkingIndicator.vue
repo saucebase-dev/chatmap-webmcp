@@ -25,7 +25,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
  */
 const { size = 'sm' } = defineProps<{ size?: 'sm' | 'lg' }>();
 
-const iconClass = computed(() => (size === 'lg' ? 'size-10' : 'size-4'));
+const iconClass = computed(() => (size === 'lg' ? 'size-8' : 'size-4'));
 
 /**
  * What the assistant says it is doing while it works.
@@ -94,7 +94,7 @@ const SPRING = { type: 'spring', stiffness: 260, damping: 22 } as const;
 <template>
     <span
         class="text-muted-foreground flex items-center"
-        :class="size === 'lg' ? 'gap-4 text-xl' : 'gap-2 text-sm'"
+        :class="size === 'lg' ? 'gap-3 text-lg' : 'gap-2 text-sm'"
         role="status"
         :aria-label="$t('Thinking')"
         data-testid="thinking"
