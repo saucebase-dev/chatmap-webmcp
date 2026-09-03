@@ -83,6 +83,7 @@ import {
     CircleAlertIcon,
     ClipboardListIcon,
     LoaderCircleIcon,
+    RefreshCwIcon,
     RouteIcon,
 } from '@lucide/vue';
 import { DefaultChatTransport, type UIMessage } from 'ai';
@@ -120,7 +121,14 @@ const props = defineProps<{
     onboarding: Onboarding | null;
 }>();
 
-const examplePrompts = [
+type ExamplePrompt = {
+    emoji: string;
+    text: string;
+};
+
+const EXAMPLE_PROMPT_COUNT = 4;
+
+const promptIdeas: ExamplePrompt[] = [
     {
         emoji: '☕',
         text: 'Find quiet coffee shops in Shibuya for a morning of work.',
@@ -139,9 +147,81 @@ const examplePrompts = [
     },
     { emoji: '✨', text: 'Help me plan a date night in Mexico City.' },
     { emoji: '🥾', text: 'Find scenic walks and viewpoints around Cape Town.' },
-]
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 3);
+    {
+        emoji: '🌧️',
+        text: 'Plan a rainy Sunday in Porto with kids and a low budget.',
+    },
+    {
+        emoji: '⏱️',
+        text: 'Make the most of a four-hour layover in central Dublin.',
+    },
+    {
+        emoji: '🥘',
+        text: 'Build a gluten-free tapas trail through Gràcia in Barcelona.',
+    },
+    {
+        emoji: '👵',
+        text: 'Plan an easy Lisbon morning for grandparents and a toddler.',
+    },
+    {
+        emoji: '🎷',
+        text: 'Find live jazz, Creole food, and a late drink in New Orleans.',
+    },
+    {
+        emoji: '📚',
+        text: 'Show me beautiful bookshops and cafés in Buenos Aires.',
+    },
+    {
+        emoji: '⛩️',
+        text: 'Plan a quiet vegetarian afternoon near the temples in Kyoto.',
+    },
+    {
+        emoji: '🛍️',
+        text: 'Explore markets, gardens, and rooftop food in Marrakech.',
+    },
+    {
+        emoji: '⛴️',
+        text: 'Plan an Istanbul morning with breakfast and a ferry ride.',
+    },
+    {
+        emoji: '🌿',
+        text: 'Find a low-key nature day near Vancouver without a car.',
+    },
+    {
+        emoji: '🚲',
+        text: 'Create a relaxed cycling route through Copenhagen highlights.',
+    },
+    {
+        emoji: '🍜',
+        text: 'Find vegetarian hawker food and evening views in Singapore.',
+    },
+];
+
+function samplePromptIdeas(excludedTexts = new Set<string>()): ExamplePrompt[] {
+    const unseenIdeas = promptIdeas.filter(
+        (idea) => !excludedTexts.has(idea.text),
+    );
+    const pool = [
+        ...(unseenIdeas.length >= EXAMPLE_PROMPT_COUNT
+            ? unseenIdeas
+            : promptIdeas),
+    ];
+
+    for (let index = pool.length - 1; index > 0; index -= 1) {
+        const randomIndex = Math.floor(Math.random() * (index + 1));
+        [pool[index], pool[randomIndex]] = [pool[randomIndex], pool[index]];
+    }
+
+    return pool.slice(0, EXAMPLE_PROMPT_COUNT);
+}
+
+const examplePrompts = ref<ExamplePrompt[]>(samplePromptIdeas());
+
+function refreshExamplePrompts(): void {
+    examplePrompts.value = samplePromptIdeas(
+        new Set(examplePrompts.value.map((idea) => idea.text)),
+    );
+}
 
 // Tracked separately from the prop: a brand new chat learns its id from the
 // first stream response, without an Inertia round trip.
@@ -1102,12 +1182,32 @@ watch(tripPhase, () => {
                             </PromptInputTools>
                         </PromptInputFooter>
                     </PromptInput>
-                    <div class="space-y-1.5" data-testid="landing-examples">
+                    <div class="space-y-1" data-testid="landing-examples">
+                        <div
+                            class="flex items-center justify-between gap-3 px-3"
+                        >
+                            <p
+                                class="text-muted-foreground font-medium"
+                            >
+                                {{ $t('Try an idea') }}
+                            </p>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                class="text-muted-foreground"
+                                data-testid="refresh-examples"
+                                @click="refreshExamplePrompts"
+                            >
+                                <RefreshCwIcon aria-hidden="true" />
+                                {{ $t('More ideas') }}
+                            </Button>
+                        </div>
                         <Button
                             v-for="example in examplePrompts"
                             :key="example.text"
                             variant="ghost"
-                            class="text-muted-foreground hover:bg-muted hover:text-foreground h-auto w-full justify-start gap-3 px-3 py-2.5 text-left text-sm whitespace-normal"
+                            class="text-muted-foreground hover:bg-muted hover:text-foreground h-auto w-full justify-start gap-3 px-3 py-1 text-left whitespace-normal cursor-pointer"
                             @click="startExample(example.text)"
                         >
                             <span class="text-base" aria-hidden="true">

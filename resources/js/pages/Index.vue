@@ -6,6 +6,7 @@ import {
     ArrowRight,
     Bot,
     Check,
+    Clock3,
     CloudRain,
     Disc3,
     Map,
@@ -14,6 +15,8 @@ import {
     MousePointer2,
     Route,
     Sparkles,
+    UtensilsCrossed,
+    UsersRound,
 } from '@lucide/vue';
 import { computed } from 'vue';
 
@@ -39,8 +42,9 @@ const journeyExamples = [
         icon: CloudRain,
         eyebrow: 'Family day',
         title: 'A rainy Sunday in Porto',
-        prompt: 'Two kids, indoor stops, short walks and an affordable lunch.',
-        result: 'A practical day plan that keeps everyone dry.',
+        prompt: 'Two kids, indoor stops, short walks, and an affordable lunch.',
+        tags: ['Rain-safe', 'Family', 'Low budget'],
+        result: 'A three-stop itinerary that keeps everyone dry.',
     },
     {
         id: 'tokyo',
@@ -48,7 +52,8 @@ const journeyExamples = [
         eyebrow: 'Night out',
         title: 'Tokyo records after dinner',
         prompt: 'Independent shops, one neighbourhood and somewhere for a late drink.',
-        result: 'Focused recommendations without crossing the whole city.',
+        tags: ['Vinyl', 'Walkable', 'Late night'],
+        result: 'A focused evening without crossing the whole city.',
     },
     {
         id: 'paris',
@@ -56,7 +61,35 @@ const journeyExamples = [
         eyebrow: 'Accessible culture',
         title: 'A step-free art afternoon',
         prompt: 'Paris galleries, accessible routes and a quiet place to take a break.',
-        result: 'An itinerary shaped around the details that matter.',
+        tags: ['Step-free', 'Art', 'Quiet breaks'],
+        result: 'An art route shaped around access and energy.',
+    },
+    {
+        id: 'dublin',
+        icon: Clock3,
+        eyebrow: 'Short layover',
+        title: 'Four useful hours in Dublin',
+        prompt: 'One landmark, a casual meal, and good coffee near the station.',
+        tags: ['4 hours', 'Carry-on', 'Near transit'],
+        result: 'A timed loop with enough margin to catch the train.',
+    },
+    {
+        id: 'barcelona',
+        icon: UtensilsCrossed,
+        eyebrow: 'Food constraints',
+        title: 'Gluten-free tapas in Gràcia',
+        prompt: 'Three relaxed stops with outdoor seating and no tourist traps.',
+        tags: ['Gluten-free', 'Local', 'Outdoor seats'],
+        result: 'A neighbourhood food trail built around the constraint.',
+    },
+    {
+        id: 'lisbon',
+        icon: UsersRound,
+        eyebrow: 'Three generations',
+        title: 'An easy morning in Lisbon',
+        prompt: 'Grandparents, a toddler, fewer hills, and somewhere shady to pause.',
+        tags: ['Low walking', 'Toddler', 'Rest stops'],
+        result: 'A gentler route that works for the whole group.',
     },
 ];
 
@@ -485,7 +518,7 @@ const planningTools = [
                         </h2>
                     </div>
 
-                    <div class="mt-12 grid gap-5 md:grid-cols-3">
+                    <div class="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                         <Link
                             v-for="example in journeyExamples"
                             :key="example.id"
@@ -515,6 +548,18 @@ const planningTools = [
                             >
                                 “{{ $t(example.prompt) }}”
                             </p>
+                            <ul
+                                class="mt-5 flex flex-wrap gap-2"
+                                :aria-label="$t('Trip constraints')"
+                            >
+                                <li
+                                    v-for="tag in example.tags"
+                                    :key="tag"
+                                    class="border-primary/15 bg-primary/6 text-primary rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                                >
+                                    {{ $t(tag) }}
+                                </li>
+                            </ul>
                             <div
                                 class="border-border/70 mt-auto flex items-end justify-between gap-3 border-t pt-5"
                             >

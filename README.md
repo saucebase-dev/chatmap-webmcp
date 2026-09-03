@@ -15,6 +15,8 @@ scraping the interface.
 
 Built for [The WebMCP Challenge](https://webmcp.devpost.com/).
 
+**Live demo:** [wayfinder.laravel.cloud](https://wayfinder.laravel.cloud)
+
 <div align="center">
 
 [![WebMCP](https://img.shields.io/badge/WebMCP-enabled-7C3AED)](https://github.com/webmachinelearning/webmcp)
@@ -56,8 +58,8 @@ in control and sees every result appear in the normal interface.
 
 ### Browser tools
 
-Wayfinder declares 15 imperative WebMCP tools: two global authentication entry
-points and 13 authenticated trip tools. Signed-out pages expose only login and,
+Wayfinder declares 18 imperative WebMCP tools: two global authentication entry
+points and 16 authenticated trip tools. Signed-out pages expose only login and,
 when registration is enabled, signup. After authentication those guest tools
 are withdrawn and Wayfinder registers only the tools that fit the current trip
 phase. Read-only tools are annotated with `readOnlyHint`.
@@ -77,6 +79,9 @@ phase. Read-only tools are annotated with `readOnlyHint`.
 | `list_chat_sessions` | Always      | List the visitor's saved conversations                        |
 | `open_chat_session`  | Always      | Switch to one of those conversations                          |
 | `show_trip_plan`     | Map         | Bring the saved plan back over the map                        |
+| `read_itinerary`     | Map         | Read the ordered itinerary currently shown on the map         |
+| `show_itinerary`     | Map         | Bring the itinerary panel back over the map                   |
+| `update_itinerary`   | Map         | Build or revise an itinerary from a plain-language request    |
 | `read_map_location`  | Map         | Read the current place, center, zoom, and moved state         |
 | `show_place_on_map`  | Map         | Move the map to a named place without adding a chat message   |
 
@@ -87,7 +92,8 @@ browser agent.
 
 ## Try the WebMCP flow
 
-Use ChatGPT's in-app browser, or Chrome 149+ with
+Open [the live demo](https://wayfinder.laravel.cloud) in ChatGPT's in-app
+browser, or use Chrome 149+ with
 `chrome://flags/#enable-webmcp-testing` enabled and the browser relaunched.
 Chrome 151+ is recommended.
 
@@ -133,7 +139,7 @@ The WebMCP implementation is intentionally small and inspectable:
 - [`modules/auth/resources/js/webmcp/authTools.ts`](modules/auth/resources/js/webmcp/authTools.ts)
   defines the global, guest-only login and signup entry points.
 - [`modules/chat/resources/js/webmcp/chatTools.ts`](modules/chat/resources/js/webmcp/chatTools.ts)
-  defines the 13 authenticated trip, conversation, and map tools.
+  defines the 16 authenticated trip, conversation, itinerary, and map tools.
 - [`modules/chat/resources/js/pages/Index.vue`](modules/chat/resources/js/pages/Index.vue)
   connects those tools to the current conversation, onboarding phase, plan,
   and map viewport.
@@ -172,11 +178,10 @@ npm run dev
 
 ### Data and storage
 
-The development stack uses PostgreSQL 18 with PostGIS 3.6, Redis, and a database
-queue worker. PostGIS is available for future geometry work; the current map
-flow uses portable columns and external OpenStreetMap services. Conversations,
-messages, interview answers, map-ready plans, and session ownership are stored
-by Laravel.
+The development stack uses PostgreSQL 18, Redis, and a database queue worker.
+Conversations, messages, interview answers, map-ready plans, itineraries, and
+session ownership are stored by Laravel. Named-place and nearby-place lookups
+use the external OpenStreetMap services described above.
 
 ## Verification
 
