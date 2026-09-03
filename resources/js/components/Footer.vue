@@ -22,7 +22,7 @@ const settings = useSettings();
                         {{ settings.general.site_name }}
                     </span>
                     <a
-                        href="https://github.com/saucebase-dev/chatmap-webmcp"
+                        href="https://github.com/saucebase-dev/wayfinder"
                         class="hover:text-foreground"
                     >
                         {{ $t('GitHub') }}

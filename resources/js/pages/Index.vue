@@ -31,7 +31,7 @@ const primaryLabel = computed(() =>
     canRegister.value ? 'Start planning' : 'Sign in to continue',
 );
 
-const proofPoints = ['15 WebMCP tools', 'Open map data', 'Live map context'];
+const proofPoints = ['18 WebMCP tools', 'Open map data', 'Live map context'];
 
 const journeyExamples = [
     {
@@ -634,7 +634,7 @@ const planningTools = [
                                 <span
                                     class="border-background/15 bg-background/8 rounded-full border px-3 py-1.5 font-mono text-xs"
                                 >
-                                    {{ $t('15 imperative tools') }}
+                                    {{ $t('18 imperative tools') }}
                                 </span>
                                 <span
                                     class="border-background/15 bg-background/8 rounded-full border px-3 py-1.5 font-mono text-xs"
@@ -733,7 +733,7 @@ const planningTools = [
                                     <span
                                         class="text-background/60 flex items-center px-3 py-2 font-mono text-xs"
                                     >
-                                        {{ $t('+ 8 more') }}
+                                        {{ $t('+ 11 more') }}
                                     </span>
                                 </div>
                             </div>
