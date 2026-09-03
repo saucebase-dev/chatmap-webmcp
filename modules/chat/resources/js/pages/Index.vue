@@ -57,13 +57,17 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { csrfToken } from '@/lib/utils';
 import { useWebMcpTools } from '@/webmcp';
 import ContextMap from '@modules/chat/resources/js/components/ContextMap.vue';
+import ItineraryPanel from '@modules/chat/resources/js/components/ItineraryPanel.vue';
+import PlaceLink from '@modules/chat/resources/js/components/PlaceLink.vue';
 import PlanSummary from '@modules/chat/resources/js/components/PlanSummary.vue';
 import ThinkingIndicator from '@modules/chat/resources/js/components/ThinkingIndicator.vue';
 import {
+    itineraryView,
     mergeViews,
     toMapView,
     viewKey,
     MAP_TOOLS,
+    type ItineraryStop,
     type MapMarker,
     type MapView,
     type MapViewport,
@@ -79,7 +83,8 @@ import {
     CheckIcon,
     CircleAlertIcon,
     ClipboardListIcon,
-    LoaderCircleIcon,
+    RefreshCwIcon,
+    RouteIcon,
 } from '@lucide/vue';
 import { DefaultChatTransport, type UIMessage } from 'ai';
 import {
@@ -105,6 +110,7 @@ type Onboarding = {
         goal: string;
         location: string;
         details: Record<string, string>;
+        stops?: ItineraryStop[];
     } | null;
 };
 
@@ -115,7 +121,14 @@ const props = defineProps<{
     onboarding: Onboarding | null;
 }>();
 
-const examplePrompts = [
+type ExamplePrompt = {
+    emoji: string;
+    text: string;
+};
+
+const EXAMPLE_PROMPT_COUNT = 4;
+
+const promptIdeas: ExamplePrompt[] = [
     {
         emoji: '☕',
         text: 'Find quiet coffee shops in Shibuya for a morning of work.',
@@ -134,9 +147,81 @@ const examplePrompts = [
     },
     { emoji: '✨', text: 'Help me plan a date night in Mexico City.' },
     { emoji: '🥾', text: 'Find scenic walks and viewpoints around Cape Town.' },
-]
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 3);
+    {
+        emoji: '🌧️',
+        text: 'Plan a rainy Sunday in Porto with kids and a low budget.',
+    },
+    {
+        emoji: '⏱️',
+        text: 'Make the most of a four-hour layover in central Dublin.',
+    },
+    {
+        emoji: '🥘',
+        text: 'Build a gluten-free tapas trail through Gràcia in Barcelona.',
+    },
+    {
+        emoji: '👵',
+        text: 'Plan an easy Lisbon morning for grandparents and a toddler.',
+    },
+    {
+        emoji: '🎷',
+        text: 'Find live jazz, Creole food, and a late drink in New Orleans.',
+    },
+    {
+        emoji: '📚',
+        text: 'Show me beautiful bookshops and cafés in Buenos Aires.',
+    },
+    {
+        emoji: '⛩️',
+        text: 'Plan a quiet vegetarian afternoon near the temples in Kyoto.',
+    },
+    {
+        emoji: '🛍️',
+        text: 'Explore markets, gardens, and rooftop food in Marrakech.',
+    },
+    {
+        emoji: '⛴️',
+        text: 'Plan an Istanbul morning with breakfast and a ferry ride.',
+    },
+    {
+        emoji: '🌿',
+        text: 'Find a low-key nature day near Vancouver without a car.',
+    },
+    {
+        emoji: '🚲',
+        text: 'Create a relaxed cycling route through Copenhagen highlights.',
+    },
+    {
+        emoji: '🍜',
+        text: 'Find vegetarian hawker food and evening views in Singapore.',
+    },
+];
+
+function samplePromptIdeas(excludedTexts = new Set<string>()): ExamplePrompt[] {
+    const unseenIdeas = promptIdeas.filter(
+        (idea) => !excludedTexts.has(idea.text),
+    );
+    const pool = [
+        ...(unseenIdeas.length >= EXAMPLE_PROMPT_COUNT
+            ? unseenIdeas
+            : promptIdeas),
+    ];
+
+    for (let index = pool.length - 1; index > 0; index -= 1) {
+        const randomIndex = Math.floor(Math.random() * (index + 1));
+        [pool[index], pool[randomIndex]] = [pool[randomIndex], pool[index]];
+    }
+
+    return pool.slice(0, EXAMPLE_PROMPT_COUNT);
+}
+
+const examplePrompts = ref<ExamplePrompt[]>(samplePromptIdeas());
+
+function refreshExamplePrompts(): void {
+    examplePrompts.value = samplePromptIdeas(
+        new Set(examplePrompts.value.map((idea) => idea.text)),
+    );
+}
 
 // Tracked separately from the prop: a brand new chat learns its id from the
 // first stream response, without an Inertia round trip.
@@ -276,6 +361,7 @@ function toolOutput<T>(part: {
 const transcriptState = computed(() => {
     let question: Question | null = null;
     let plan: MapPlan | null = null;
+    let stops: ItineraryStop[] | null = null;
     let sawTools = false;
 
     for (const message of messages.value) {
@@ -296,11 +382,18 @@ const transcriptState = computed(() => {
                     plan = saved;
                     question = null;
                 }
+            } else if (part.type === 'tool-save_itinerary') {
+                sawTools = true;
+                // The itinerary tool answers with a map view, not a plan, so
+                // its stops are tracked apart and folded back in below.
+                stops =
+                    toolOutput<{ stops?: ItineraryStop[] }>(part)?.stops ??
+                    stops;
             }
         }
     }
 
-    return { question, plan, sawTools };
+    return { question, plan, stops, sawTools };
 });
 
 const activeQuestion = computed(
@@ -311,9 +404,15 @@ const activeQuestion = computed(
             : (onboarding.value?.current_question ?? null)),
 );
 
-const activePlan = computed(
-    () => transcriptState.value.plan ?? onboarding.value?.plan ?? null,
-);
+const activePlan = computed(() => {
+    const plan = transcriptState.value.plan ?? onboarding.value?.plan ?? null;
+    const stops = transcriptState.value.stops;
+
+    // A plan saved this turn arrives without the stops the row already holds,
+    // and stops saved this turn are newer than the row's, so the two halves are
+    // merged rather than one winning outright.
+    return plan && stops ? { ...plan, stops } : plan;
+});
 
 const onboardingPhase = computed(() => {
     if (onboarding.value?.phase === 'mapping') {
@@ -332,6 +431,16 @@ const isMapStaging = computed(
 const isPreparingOnboarding = computed(
     () => isMapStaging.value && !activeQuestion.value && !activePlan.value,
 );
+
+/**
+ * "Show my map" is answered by a whole turn, not by the click.
+ *
+ * The staging card closes as soon as the phase flips, so without this the map
+ * sits empty -- or on the bare location `locate()` flew to -- while the
+ * assistant is still searching. It stays up until something is actually placed,
+ * or until the turn ends with nothing (the assistant answered in prose).
+ */
+const awaitingPlaces = ref(false);
 
 watch(
     () => props.onboarding,
@@ -413,6 +522,20 @@ const mapView = computed<MapView>(
     () => overrideView.value ?? conversationView.value,
 );
 
+// Cleared by the map filling up, or by the turn ending either way -- never left
+// to hang if the reply never places anything.
+watch([() => viewKey(mapView.value), status], () => {
+    if (!awaitingPlaces.value) {
+        return;
+    }
+
+    const placed = mapView.value.markers?.length || mapView.value.stops?.length;
+
+    if (placed || status.value === 'ready' || status.value === 'error') {
+        awaitingPlaces.value = false;
+    }
+});
+
 /**
  * Where the map is pointing, sent with every message.
  *
@@ -430,6 +553,107 @@ const contextMap = ref<ContextMapHandle | null>(null);
 
 function focusMapMarker(marker: MapMarker): void {
     contextMap.value?.focusMarker(marker);
+}
+
+/**
+ * Open a stop's pin from the itinerary list.
+ *
+ * A stop calls it a title where a place calls it a name, and `focusMarker`
+ * matches on coordinates anyway, so this is only the shape adapter.
+ */
+/**
+ * Places the map can currently be pointed at, by lowercased name.
+ *
+ * The reply names the same places the tools just put on the map, so the two
+ * are matched by name rather than by re-parsing the prose. Only what is on the
+ * map right now is linkable: an older search's pins are gone, and a link that
+ * moves the camera nowhere is worse than plain text.
+ */
+const linkablePlaces = computed(() => {
+    const places = new Map<string, MapMarker>();
+
+    for (const stop of itineraryStops.value) {
+        places.set(stop.title.toLowerCase(), {
+            lat: stop.lat,
+            lon: stop.lon,
+            name: stop.title,
+        });
+    }
+
+    for (const marker of mapView.value.markers ?? []) {
+        places.set(marker.name.toLowerCase(), marker);
+    }
+
+    return places;
+});
+
+/**
+ * Turn place names in a reply into links to their pin.
+ *
+ * A string rewrite rather than a walk over the rendered output: the markdown is
+ * re-rendered on every streamed token, so anything done to the DOM would be
+ * undone immediately. Longest names first, so "Museu Picasso Cafe" is not eaten
+ * by "Museu Picasso".
+ */
+function withPlaceLinks(text: string): string {
+    const names = [...linkablePlaces.value.values()]
+        .map((place) => place.name)
+        // Short names collide with ordinary words often enough to be noise.
+        .filter((name) => name.length > 3)
+        .sort((a, b) => b.length - a.length);
+
+    if (!names.length) {
+        return text;
+    }
+
+    const alternatives = names
+        .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('|');
+
+    // Not already inside a link, and not part of a longer word.
+    const pattern = new RegExp(
+        `(?<![\\[\\w])(${alternatives})(?![\\w\\]])`,
+        'g',
+    );
+
+    // The markdown renderer strips the href off every anchor it makes, so the
+    // target is a placeholder: what identifies the place on the way back is the
+    // link text, which is the name itself.
+    return text.replace(
+        pattern,
+        (name) => `[${name.replace(/[[\]]/g, '\\$&')}](#map)`,
+    );
+}
+
+/**
+ * One listener for the whole transcript rather than a component per link: the
+ * links are markdown output, so there is no Vue node to bind to.
+ */
+const markdownRenderers = { link: PlaceLink };
+
+function onTranscriptClick(event: MouseEvent): void {
+    const link = (event.target as HTMLElement | null)?.closest?.(
+        '[data-place]',
+    );
+
+    if (!link) {
+        return;
+    }
+
+    const place = linkablePlaces.value.get(
+        (link.textContent ?? '').trim().toLowerCase(),
+    );
+
+    if (!place) {
+        return;
+    }
+
+    event.preventDefault();
+    focusMapMarker(place);
+}
+
+function focusStop(stop: ItineraryStop): void {
+    focusMapMarker({ lat: stop.lat, lon: stop.lon, name: stop.title });
 }
 
 const lastMessageId = computed(() => messages.value.at(-1)?.id);
@@ -743,9 +967,15 @@ useWebMcpTools(
             openMap: showMap,
             startTrip,
             showPlan,
-        }).filter(
-            (tool) => !tool.phases || tool.phases.includes(tripPhase.value),
-        ),
+            showItinerary,
+        }).map((tool) => ({
+            // Marked rather than dropped: a phase tool is still part of what
+            // this page offers, it is simply not this moment's turn. The
+            // browser is only handed the available ones; the panel shows all
+            // of them, so the visitor can see where their agent is headed.
+            ...tool,
+            available: !tool.phases || tool.phases.includes(tripPhase.value),
+        })),
     ),
 );
 
@@ -918,6 +1148,8 @@ async function showMap(): Promise<void> {
     }
 
     if (status.value === 'ready') {
+        awaitingPlaces.value = true;
+
         chat.sendMessage({
             text: location
                 ? `Show me places for my plan in ${location}.`
@@ -966,9 +1198,62 @@ function showPlan(): void {
     planOpen.value = true;
 }
 
+/**
+ * The itinerary takes the composer's place while it is open.
+ *
+ * Same swap the interview question card uses, so the transcript above stays
+ * visible and the visitor is never taken away from the conversation.
+ */
+const itineraryOpen = ref(false);
+
+const itineraryStops = computed<ItineraryStop[]>(
+    () => activePlan.value?.stops ?? [],
+);
+
+function showItinerary(): void {
+    itineraryOpen.value = true;
+
+    // The conversation may have searched for other things since the itinerary
+    // was saved, so the map is pointed back at it rather than left wherever the
+    // last reply put it.
+    overrideView.value = itineraryView(activePlan.value) ?? overrideView.value;
+}
+
+function toggleItinerary(): void {
+    if (itineraryOpen.value) {
+        itineraryOpen.value = false;
+
+        return;
+    }
+
+    showItinerary();
+}
+
+/**
+ * Show the day as soon as the assistant has one.
+ *
+ * Keyed on the stops themselves rather than on their count, so rewriting a
+ * three-stop day into a different three-stop day still brings it forward. It
+ * does not fire for the itinerary already saved when the page loads: reopening
+ * an old conversation should land on the map, not on a panel the visitor did
+ * not ask for.
+ */
+watch(
+    () =>
+        itineraryStops.value
+            .map((stop) => `${stop.title}@${stop.lat},${stop.lon}`)
+            .join(';'),
+    (stops) => {
+        if (stops !== '') {
+            itineraryOpen.value = true;
+        }
+    },
+);
+
 // A phase change means a new card, so a stale "open" must not carry over.
 watch(tripPhase, () => {
     planOpen.value = false;
+    itineraryOpen.value = false;
 });
 </script>
 
@@ -1019,12 +1304,30 @@ watch(tripPhase, () => {
                             </PromptInputTools>
                         </PromptInputFooter>
                     </PromptInput>
-                    <div class="space-y-1.5" data-testid="landing-examples">
+                    <div class="space-y-1" data-testid="landing-examples">
+                        <div
+                            class="flex items-center justify-between gap-3 px-3"
+                        >
+                            <p class="text-muted-foreground font-medium">
+                                {{ $t('Try an idea') }}
+                            </p>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                class="text-muted-foreground"
+                                data-testid="refresh-examples"
+                                @click="refreshExamplePrompts"
+                            >
+                                <RefreshCwIcon aria-hidden="true" />
+                                {{ $t('More ideas') }}
+                            </Button>
+                        </div>
                         <Button
                             v-for="example in examplePrompts"
                             :key="example.text"
                             variant="ghost"
-                            class="text-muted-foreground hover:bg-muted hover:text-foreground h-auto w-full justify-start gap-3 px-3 py-2.5 text-left text-sm whitespace-normal"
+                            class="text-muted-foreground hover:bg-muted hover:text-foreground h-auto w-full cursor-pointer justify-start gap-3 px-3 py-1 text-left whitespace-normal"
                             @click="startExample(example.text)"
                         >
                             <span class="text-base" aria-hidden="true">
@@ -1043,11 +1346,14 @@ watch(tripPhase, () => {
             >
                 <!-- Opens at its minimum so the map gets the room by default;
                      the divider is there for anyone who wants more text. -->
+                <!-- min-size is a percentage of the window, so on a narrow
+                     screen it still collapses the conversation to nothing. The
+                     pixel floor is what actually keeps it readable. -->
                 <ResizablePanel
                     :default-size="CHAT_MIN_SIZE"
                     :min-size="CHAT_MIN_SIZE"
                     ref="pane"
-                    class="flex flex-col"
+                    class="flex min-w-[400px] flex-col"
                     data-testid="chat-pane"
                 >
                     <AppHeader
@@ -1058,7 +1364,10 @@ watch(tripPhase, () => {
                     />
 
                     <Conversation ref="conversation">
-                        <ConversationContent data-testid="chat-messages">
+                        <ConversationContent
+                            data-testid="chat-messages"
+                            @click="onTranscriptClick"
+                        >
                             <ConversationEmptyState
                                 v-if="!messages.length"
                                 :title="$t('Ask me anything')"
@@ -1131,6 +1440,10 @@ watch(tripPhase, () => {
                                                     thought.description
                                                 "
                                                 :status="thought.status"
+                                                :default-open="
+                                                    thought.body?.kind !==
+                                                    'results'
+                                                "
                                                 :data-testid="`thought-${message.id}-${thought.id}`"
                                             >
                                                 <template #icon>
@@ -1223,13 +1536,18 @@ watch(tripPhase, () => {
                                              typewriter; the caret marks it. -->
                                         <MessageResponse
                                             v-if="part.type === 'text'"
-                                            :content="part.text"
+                                            :content="
+                                                message.role === 'assistant'
+                                                    ? withPlaceLinks(part.text)
+                                                    : part.text
+                                            "
                                             :mode="
                                                 isWriting(message)
                                                     ? 'streaming'
                                                     : 'static'
                                             "
                                             :enable-animate="false"
+                                            :node-renderers="markdownRenderers"
                                             caret="block"
                                         />
                                     </template>
@@ -1276,10 +1594,10 @@ watch(tripPhase, () => {
                         <div
                             role="group"
                             :aria-label="activeQuestion.question"
-                            class="bg-card text-card-foreground max-h-[min(62svh,42rem)] space-y-3 overflow-y-auto rounded-xl border p-4 shadow-sm"
+                            class="bg-card text-card-foreground max-h-[min(62svh,42rem)] space-y-3 overflow-y-auto rounded-xl border p-4 text-sm shadow-sm"
                             data-testid="onboarding-question"
                         >
-                            <h2 class="text-base font-semibold">
+                            <h2 class="text-sm font-semibold">
                                 {{ activeQuestion.question }}
                             </h2>
                             <p
@@ -1299,7 +1617,7 @@ watch(tripPhase, () => {
                                 :key="option"
                                 type="button"
                                 :aria-pressed="selectedAnswers.includes(option)"
-                                class="border-input hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                                class="border-input hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring flex w-full items-start gap-1 rounded-lg border p-3 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none"
                                 :class="
                                     selectedAnswers.includes(option) &&
                                     'border-primary bg-primary/5'
@@ -1372,6 +1690,40 @@ watch(tripPhase, () => {
                         </div>
                     </div>
 
+                    <!-- The itinerary takes the composer's place, exactly as
+                         the interview question does, so the conversation above
+                         it stays where the visitor left it. -->
+                    <!-- Full bleed, no card: the list scrolls against the
+                         pane's own edge, so the scrollbar sits outside the
+                         stops rather than inset within a rounded box. The
+                         header keeps its place while the list moves under it.
+                         Scrollbars are themed globally, not here. -->
+                    <div
+                        v-else-if="itineraryOpen"
+                        class="flex max-h-[45vh] min-h-0 flex-col border-t"
+                    >
+                        <div
+                            class="flex items-center justify-between gap-3 px-4 py-2"
+                        >
+                            <h2 class="text-sm font-semibold">
+                                {{ $t('Your itinerary') }}
+                            </h2>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                data-testid="close-itinerary"
+                                @click="itineraryOpen = false"
+                            >
+                                {{ $t('Close') }}
+                            </Button>
+                        </div>
+                        <ItineraryPanel
+                            :stops="itineraryStops"
+                            class="min-h-0 flex-1 overflow-y-auto"
+                            @focus="focusStop"
+                        />
+                    </div>
+
                     <div v-else class="p-4">
                         <PromptInput
                             data-testid="chat-form"
@@ -1411,7 +1763,11 @@ watch(tripPhase, () => {
                     <div class="relative size-full">
                         <ContextMap
                             ref="contextMap"
-                            :class="isMapStaging ? 'blur-md' : undefined"
+                            :class="
+                                isMapStaging || awaitingPlaces
+                                    ? 'blur-md'
+                                    : undefined
+                            "
                             :view="mapView"
                             @viewport="viewport = $event"
                         />
@@ -1419,7 +1775,31 @@ watch(tripPhase, () => {
                             v-if="isMapStaging && !activeQuestion"
                             class="bg-background/35 absolute inset-0 grid place-items-center p-6 backdrop-blur-xs"
                         >
+                            <!-- Nothing to frame yet: while the interview is
+                                 being built there is no plan to read, so the
+                                 indicator stands on the blurred map alone. -->
+                            <div
+                                v-if="isPreparingOnboarding"
+                                class="flex flex-col items-center gap-3"
+                            >
+                                <ThinkingIndicator size="lg" />
+                                <Button
+                                    v-if="
+                                        conversationId &&
+                                        status !== 'streaming' &&
+                                        status !== 'submitted'
+                                    "
+                                    variant="ghost"
+                                    size="sm"
+                                    data-testid="skip-preparing"
+                                    @click="skipInterview"
+                                >
+                                    {{ $t('Skip for now') }}
+                                </Button>
+                            </div>
+
                             <Plan
+                                v-else
                                 :default-open="true"
                                 :is-streaming="status === 'streaming'"
                                 class="w-full max-w-xl shadow-lg"
@@ -1429,30 +1809,22 @@ watch(tripPhase, () => {
                                     <div class="space-y-1">
                                         <PlanTitle>
                                             {{
-                                                isPreparingOnboarding
-                                                    ? $t('Preparing your map')
-                                                    : onboardingPhase ===
-                                                        'reviewing'
-                                                      ? $t('Your map plan')
-                                                      : $t(
-                                                            'A few quick questions',
-                                                        )
+                                                onboardingPhase === 'reviewing'
+                                                    ? $t('Your map plan')
+                                                    : $t(
+                                                          'A few quick questions',
+                                                      )
                                             }}
                                         </PlanTitle>
                                         <PlanDescription>
                                             {{
-                                                isPreparingOnboarding
+                                                onboardingPhase === 'reviewing'
                                                     ? $t(
-                                                          'Getting your first question ready…',
+                                                          'Review this before opening the map.',
                                                       )
-                                                    : onboardingPhase ===
-                                                        'reviewing'
-                                                      ? $t(
-                                                            'Review this before opening the map.',
-                                                        )
-                                                      : $t(
-                                                            'A few details help make the map useful.',
-                                                        )
+                                                    : $t(
+                                                          'A few details help make the map useful.',
+                                                      )
                                             }}
                                         </PlanDescription>
                                     </div>
@@ -1460,34 +1832,7 @@ watch(tripPhase, () => {
 
                                 <PlanContent>
                                     <div
-                                        v-if="isPreparingOnboarding"
-                                        class="text-muted-foreground flex items-center gap-3 py-3 text-sm"
-                                    >
-                                        <LoaderCircleIcon
-                                            class="text-primary size-5 animate-spin"
-                                        />
-                                        {{
-                                            $t(
-                                                'Building a few tailored questions…',
-                                            )
-                                        }}
-                                        <Button
-                                            v-if="
-                                                conversationId &&
-                                                status !== 'streaming' &&
-                                                status !== 'submitted'
-                                            "
-                                            variant="ghost"
-                                            size="sm"
-                                            class="ml-auto"
-                                            data-testid="skip-preparing"
-                                            @click="skipInterview"
-                                        >
-                                            {{ $t('Skip for now') }}
-                                        </Button>
-                                    </div>
-                                    <div
-                                        v-else-if="
+                                        v-if="
                                             onboardingPhase === 'reviewing' &&
                                             activePlan
                                         "
@@ -1511,27 +1856,63 @@ watch(tripPhase, () => {
                             </Plan>
                         </div>
 
-                        <!-- Styled like ContextMap's own controls so it reads as
-                             part of the map, not the chat. Pressed while the
-                             card is open, like the 3D toggle. -->
-                        <Button
-                            v-if="activePlan && !isMapStaging"
-                            variant="secondary"
-                            size="sm"
-                            class="absolute bottom-2.5 left-2.5 z-10 h-7.25 gap-1.5 rounded px-2 shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"
-                            :class="
-                                planOpen
-                                    ? 'bg-neutral-800 text-white hover:bg-neutral-700'
-                                    : 'bg-white text-neutral-800 hover:bg-neutral-100'
-                            "
-                            :aria-pressed="planOpen"
-                            data-testid="show-plan"
-                            @click="planOpen = !planOpen"
+                        <div
+                            v-if="awaitingPlaces"
+                            class="bg-background/35 absolute inset-0 z-10 grid place-items-center p-6 backdrop-blur-xs"
+                            data-testid="map-loading"
                         >
-                            <ClipboardListIcon class="size-4" />
-                            {{ $t('Plan') }}
-                        </Button>
+                            <ThinkingIndicator size="lg" />
+                        </div>
 
+                        <!-- Styled like ContextMap's own controls so they read
+                             as part of the map, not the chat. Pressed while the
+                             card is open, like the 3D toggle. One row rather
+                             than two absolute buttons fighting over the corner. -->
+                        <div
+                            class="absolute bottom-2.5 left-2.5 z-10 flex items-center gap-2"
+                        >
+                            <Button
+                                v-if="activePlan && !isMapStaging"
+                                variant="secondary"
+                                size="sm"
+                                class="h-7.25 gap-1.5 rounded px-2 shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"
+                                :class="
+                                    planOpen
+                                        ? 'bg-neutral-800 text-white hover:bg-neutral-700'
+                                        : 'bg-white text-neutral-800 hover:bg-neutral-100'
+                                "
+                                :aria-pressed="planOpen"
+                                data-testid="show-plan"
+                                @click="planOpen = !planOpen"
+                            >
+                                <ClipboardListIcon class="size-4" />
+                                {{ $t('Plan') }}
+                            </Button>
+
+                            <Button
+                                v-if="itineraryStops.length && !isMapStaging"
+                                variant="secondary"
+                                size="sm"
+                                class="h-7.25 gap-1.5 rounded px-2 shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"
+                                :class="
+                                    itineraryOpen
+                                        ? 'bg-neutral-800 text-white hover:bg-neutral-700'
+                                        : 'bg-white text-neutral-800 hover:bg-neutral-100'
+                                "
+                                :aria-pressed="itineraryOpen"
+                                data-testid="show-itinerary"
+                                @click="toggleItinerary"
+                            >
+                                <RouteIcon class="size-4" />
+                                {{ $t('Itinerary') }}
+                            </Button>
+                        </div>
+
+                        <!-- Sits inside the map panel, so it has to fit the
+                             map panel: the card is capped at the overlay's
+                             height and scrolls its own contents rather than
+                             growing past the bottom, which took the footer
+                             buttons off screen with it. -->
                         <div
                             v-if="activePlan && !isMapStaging && planOpen"
                             class="absolute inset-0 grid place-items-center p-6"
@@ -1539,7 +1920,7 @@ watch(tripPhase, () => {
                         >
                             <Plan
                                 :default-open="true"
-                                class="w-full max-w-xl shadow-lg"
+                                class="flex max-h-full w-full max-w-xl flex-col shadow-lg"
                                 data-testid="plan-card"
                             >
                                 <PlanHeader>
@@ -1556,7 +1937,9 @@ watch(tripPhase, () => {
                                         </PlanDescription>
                                     </div>
                                 </PlanHeader>
-                                <PlanContent>
+                                <PlanContent
+                                    class="min-h-0 flex-1 overflow-y-auto"
+                                >
                                     <PlanSummary :plan="activePlan" />
                                 </PlanContent>
                                 <PlanFooter class="justify-between">

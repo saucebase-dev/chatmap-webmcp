@@ -1,7 +1,10 @@
-# Chat Module
+# Wayfinder Chat Module
 
-A Laravel module that extends Saucebase core functionality. Designed for seamless integration with the ecosystem.
+The application module behind Wayfinder's guided trip planning, AI place
+assistant, interactive map, conversation history, and phase-aware WebMCP tools.
 
-This module is part of **[Saucebase](https://github.com/saucebase-dev/saucebase)**
+This module is part of [Wayfinder](../../README.md), a Vue-only modular Laravel
+application built on the Saucebase starter kit.
 
-**[Documentation →](https://saucebase-dev.github.io/docs/modules)**
+See the [project README](../../README.md) for setup, architecture, and WebMCP
+testing instructions.

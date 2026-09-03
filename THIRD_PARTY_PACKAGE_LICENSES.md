@@ -1,6 +1,6 @@
 # Third-Party Package Licenses
 
-This file lists the production npm (JavaScript) dependencies used by Saucebase and their respective licenses.
+This file lists the production npm (JavaScript) dependencies used by Wayfinder and their respective licenses.
 
 > **Note:** This file is manually maintained. Update it when production dependencies change.
 > Dev-only dependencies (`devDependencies`) are excluded.

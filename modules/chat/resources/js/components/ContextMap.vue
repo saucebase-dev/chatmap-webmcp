@@ -12,10 +12,12 @@ import {
     MAP_STYLES,
     styleUrlFor,
     viewKey,
+    type ItineraryStop,
     type MapMarker,
     type MapStyleId,
     type MapView,
     type MapViewport,
+    routeDistanceKm,
 } from '@modules/chat/resources/js/map';
 import {
     useMutationObserver,
@@ -24,6 +26,7 @@ import {
 } from '@vueuse/core';
 import IconBuilding from '~icons/lucide/building-2';
 import IconPalette from '~icons/lucide/palette';
+import IconRoute from '~icons/lucide/route';
 import IconScan from '~icons/lucide/scan';
 import IconAtm from '~icons/maki/bank';
 import IconBeach from '~icons/maki/beach';
@@ -57,12 +60,14 @@ import {
     NavigationControl,
     Popup,
     setWorkerUrl,
+    type GeoJSONSource,
     type LngLatBoundsLike,
     type Offset,
 } from 'maplibre-gl';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
+    computed,
     h,
     onBeforeUnmount,
     onMounted,
@@ -94,6 +99,27 @@ const props = defineProps<{ view: MapView }>();
 
 const emit = defineEmits<{ viewport: [MapViewport] }>();
 
+/**
+ * The badge over the map: how many stops the day has and how far it runs.
+ *
+ * Only for a real day. One stop has no route to measure, and a search result
+ * is not an itinerary at all.
+ */
+const routeSummary = computed(() => {
+    const stops = props.view.stops ?? [];
+
+    if (stops.length < 2) {
+        return null;
+    }
+
+    const km = routeDistanceKm(stops);
+
+    return {
+        stops: stops.length,
+        distance: km < 10 ? km.toFixed(1) : String(Math.round(km)),
+    };
+});
+
 // OpenFreeMap serves OpenStreetMap vector tiles with no key, no registration
 // and no usage limits, so nothing here needs credentials or a quota alarm.
 const stylePreference = useStorage<MapStyleId>('chat.map-style', 'auto');
@@ -107,6 +133,18 @@ const controlClass =
     'size-7.25 rounded shadow-[0_0_0_2px_rgba(0,0,0,0.1)] bg-white text-neutral-800 hover:bg-neutral-100';
 
 const BUILDINGS_LAYER = 'buildings-3d';
+
+const ROUTE_SOURCE = 'itinerary-route';
+const ROUTE_LAYER = 'itinerary-route-line';
+
+/**
+ * The interface's own primary, as a hex.
+ *
+ * MapLibre parses colours itself and does not understand `oklch()` or CSS
+ * variables, so the token in `theme.css` cannot be handed to a paint property.
+ * It is the same value in light and dark, so one constant covers both.
+ */
+const ROUTE_COLOR = '#6754C4';
 
 const container = ref<HTMLDivElement | null>(null);
 
@@ -248,6 +286,54 @@ function placeMarkerElement(
     return element;
 }
 
+/**
+ * A numbered pin for one stop of the itinerary.
+ *
+ * Deliberately the same shape as a place pin but numbered and in the interface
+ * primary, so a stop on the visitor's day reads as a different kind of thing
+ * from a search result without being a different kind of object on the map.
+ */
+function stopMarkerElement(index: number, stop: ItineraryStop): HTMLElement {
+    const element = document.createElement('div');
+
+    element.setAttribute('role', 'button');
+    element.setAttribute('aria-label', `${index + 1}. ${stop.title}`);
+    element.style.setProperty('--marker-color', ROUTE_COLOR);
+    element.className =
+        "relative grid size-9 cursor-pointer place-items-center rounded-full border-2 border-white text-sm font-bold text-white shadow-lg ring-1 ring-black/20 transition-[filter] [background-color:var(--marker-color)] after:absolute after:-bottom-1 after:left-1/2 after:size-2 after:-translate-x-1/2 after:rotate-45 after:border-r-2 after:border-b-2 after:border-white after:[background-color:var(--marker-color)] after:content-[''] hover:brightness-110";
+
+    const label = document.createElement('span');
+    label.className = 'relative z-10';
+    label.textContent = String(index + 1);
+    element.append(label);
+
+    return element;
+}
+
+/** The popup for one stop: what it is, when, and why. */
+function stopPopupContent(stop: ItineraryStop): HTMLElement {
+    const root = document.createElement('div');
+    root.className = 'space-y-1 text-sm';
+
+    const title = document.createElement('div');
+    title.className = 'font-semibold';
+    title.textContent = stop.time ? `${stop.time} · ${stop.title}` : stop.title;
+    root.append(title);
+
+    for (const line of [stop.place, stop.note]) {
+        if (!line) {
+            continue;
+        }
+
+        const row = document.createElement('div');
+        row.className = 'text-muted-foreground';
+        row.textContent = line;
+        root.append(row);
+    }
+
+    return root;
+}
+
 /** Move the map to a view, animating only once the first view has landed. */
 function showView(view: MapView, animate: boolean): void {
     const instance = map.value;
@@ -297,7 +383,98 @@ function showView(view: MapView, animate: boolean): void {
         );
     }
 
+    for (const [index, stop] of (view.stops ?? []).entries()) {
+        placed.push(
+            new Marker({
+                element: stopMarkerElement(index, stop),
+                anchor: 'bottom',
+                offset: [0, -4],
+            })
+                .setLngLat([stop.lon, stop.lat])
+                .setPopup(
+                    new Popup({
+                        offset: PLACE_POPUP_OFFSET,
+                        focusAfterOpen: false,
+                        maxWidth: '280px',
+                    }).setDOMContent(stopPopupContent(stop)),
+                )
+                .addTo(instance),
+        );
+    }
+
     markers.value = placed;
+    drawRoute(instance);
+}
+
+/**
+ * The dashed line joining the stops in order.
+ *
+ * Straight segments, not a routed path: this says "then here, then here",
+ * which is what the itinerary knows. Real walking directions would need a
+ * routing service and a different promise.
+ */
+function routeData(stops: ItineraryStop[]): GeoJSON.FeatureCollection {
+    return {
+        type: 'FeatureCollection',
+        features:
+            stops.length < 2
+                ? []
+                : [
+                      {
+                          type: 'Feature',
+                          properties: {},
+                          geometry: {
+                              type: 'LineString',
+                              coordinates: stops.map((stop) => [
+                                  stop.lon,
+                                  stop.lat,
+                              ]),
+                          },
+                      },
+                  ],
+    };
+}
+
+/**
+ * Put the route on the map, adding its source and layer if the style lost them.
+ *
+ * Like the buildings layer this has to survive `style.load`, which replaces the
+ * whole layer list, so it re-adds rather than assuming it is still there.
+ */
+function drawRoute(instance: MapLibreMap): void {
+    const data = routeData(props.view.stops ?? []);
+    const source = instance.getSource(ROUTE_SOURCE);
+
+    if (source) {
+        (source as GeoJSONSource).setData(data);
+    } else {
+        instance.addSource(ROUTE_SOURCE, { type: 'geojson', data });
+    }
+
+    if (instance.getLayer(ROUTE_LAYER)) {
+        return;
+    }
+
+    // Under the first label layer, so place names stay readable through it.
+    const firstLabel = instance
+        .getStyle()
+        .layers.find((layer) => layer.type === 'symbol')?.id;
+
+    instance.addLayer(
+        {
+            id: ROUTE_LAYER,
+            type: 'line',
+            source: ROUTE_SOURCE,
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: {
+                'line-color': ROUTE_COLOR,
+                'line-width': 3,
+                'line-dasharray': [2, 2],
+                'line-opacity': 0.9,
+            },
+        },
+        firstLabel,
+    );
 }
 
 /**
@@ -490,7 +667,10 @@ onMounted(() => {
             canReturnToSearch.value = true;
         }
     });
-    instance.on('style.load', () => addBuildings(instance));
+    instance.on('style.load', () => {
+        addBuildings(instance);
+        drawRoute(instance);
+    });
     instance.on('load', () => showView(props.view, false));
 });
 
@@ -644,6 +824,20 @@ useMutationObserver(
             >
                 <IconBuilding class="size-4" />
             </Button>
+        </div>
+
+        <div
+            v-if="routeSummary"
+            class="bg-card/95 text-foreground border-border absolute top-2.5 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold shadow-md backdrop-blur"
+            data-testid="map-route-summary"
+        >
+            <IconRoute class="text-primary size-4" />
+            {{
+                $t(':stops stops · :distance km', {
+                    stops: routeSummary.stops,
+                    distance: routeSummary.distance,
+                })
+            }}
         </div>
 
         <Button

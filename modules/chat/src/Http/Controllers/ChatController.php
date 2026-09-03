@@ -15,6 +15,7 @@ use Laravel\Ai\Models\Conversation;
 use Laravel\Ai\Tools\Request as ToolRequest;
 use Modules\Chat\Ai\ChatAgent;
 use Modules\Chat\Ai\Tools\FindPlaces;
+use Modules\Chat\Ai\Tools\SaveItinerary;
 use Modules\Chat\Ai\Tools\ShowOnMap;
 use Modules\Chat\Jobs\GenerateConversationTitle;
 use Modules\Chat\Models\OnboardingState;
@@ -35,6 +36,7 @@ class ChatController
     public const array MAP_TOOLS = [
         ShowOnMap::NAME,
         FindPlaces::NAME,
+        SaveItinerary::NAME,
     ];
 
     /**
@@ -177,6 +179,14 @@ class ChatController
      */
     protected function mergeViews(array $views): array
     {
+        // An itinerary is the deliberate answer of the whole reply, not one
+        // search among several, so it wins outright over the lookups that fed it.
+        $itineraries = array_values(array_filter($views, fn (array $view): bool => ! empty($view['stops'])));
+
+        if ($itineraries !== []) {
+            return end($itineraries);
+        }
+
         $searches = array_values(array_filter($views, fn (array $view): bool => ! empty($view['markers'])));
 
         if (count($searches) <= 1) {

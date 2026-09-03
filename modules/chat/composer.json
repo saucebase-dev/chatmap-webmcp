@@ -1,13 +1,17 @@
 {
     "name": "modules/chat",
-    "description": "",
+    "description": "Wayfinder's guided trip-planning, live-map, AI assistant, and WebMCP module.",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "version": "1.0.0",
     "authors": [
         {
             "name": "Saucebase",
             "email": "hello@saucebase.dev"
+        },
+        {
+            "name": "Renan Roble",
+            "email": "renanroble@gmail.com"
         }
     ],
     "extra": {

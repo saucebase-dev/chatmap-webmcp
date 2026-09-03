@@ -47,6 +47,19 @@ export type MapMarker = {
     >;
 };
 
+/** One stop of the visitor's day, as SaveItinerary hands it back. */
+export type ItineraryStop = {
+    lat: number;
+    lon: number;
+    /** What the visitor is doing here. */
+    title: string;
+    /** The stop as the geocoder found it. */
+    place: string;
+    /** "HH:MM", when the day has times. */
+    time?: string;
+    note?: string;
+};
+
 /** What a map tool hands back, once parsed. */
 export type MapView = {
     label: string;
@@ -59,6 +72,8 @@ export type MapView = {
     categoryKey?: string;
     /** What was searched for, already pluralised by the tool. */
     category?: string;
+    /** The visitor's day in order, from SaveItinerary. */
+    stops?: ItineraryStop[];
 };
 
 /** Where the map actually sits right now, which the visitor may have panned. */
@@ -84,7 +99,13 @@ export function viewKey(view: MapView): string {
         .map((marker) => `${marker.name}@${marker.lat},${marker.lon}`)
         .join(';');
 
-    return `${view.label}|${view.bbox.join(',')}|${pins}`;
+    // Stops belong to the identity for the same reason: reordering a day, or
+    // swapping one stop for another nearby, leaves the label and the box alone.
+    const stops = (view.stops ?? [])
+        .map((stop) => JSON.stringify(stop))
+        .join(';');
+
+    return `${view.label}|${view.bbox.join(',')}|${pins}|${stops}`;
 }
 
 /**
@@ -93,7 +114,11 @@ export function viewKey(view: MapView): string {
  * Mirrors `ChatController::MAP_TOOLS`. Streamed parts are named `tool-<name>`,
  * so these are the bare names and the `tool-` prefix is added where matched.
  */
-export const MAP_TOOLS = ['show_on_map', 'find_places'] as const;
+export const MAP_TOOLS = [
+    'show_on_map',
+    'find_places',
+    'save_itinerary',
+] as const;
 
 /**
  * Read a map view out of a tool result.
@@ -122,6 +147,14 @@ export function toMapView(output: unknown): MapView | null {
  * plain placement; their pins are pooled, and the box grows to hold them all.
  */
 export function mergeViews(views: MapView[]): MapView | null {
+    // An itinerary is the deliberate answer of the whole reply, not one search
+    // among several, so it wins outright over the lookups that fed it.
+    const itineraries = views.filter((view) => view.stops?.length);
+
+    if (itineraries.length) {
+        return itineraries.at(-1) ?? null;
+    }
+
     const searches = views.filter((view) => view.markers?.length);
 
     if (searches.length === 0) {
@@ -158,4 +191,67 @@ export function mergeViews(views: MapView[]): MapView | null {
         ],
         markers,
     };
+}
+
+/**
+ * The map view for an itinerary already saved earlier in the conversation.
+ *
+ * Rebuilt from the plan rather than kept around, because the transcript view is
+ * derived from the last reply and the visitor may have searched for other
+ * things since. Mirrors what `SaveItinerary` returns.
+ */
+export function itineraryView(
+    plan: { location?: string; stops?: ItineraryStop[] } | null,
+): MapView | null {
+    const stops = plan?.stops ?? [];
+
+    if (!stops.length) {
+        return null;
+    }
+
+    const lats = stops.map((stop) => stop.lat);
+    const lons = stops.map((stop) => stop.lon);
+
+    // One stop has no extent, and a zero-size box gives the camera nothing to
+    // fit. Matches SaveItinerary::SPAN.
+    const span = 0.005;
+
+    return {
+        label: plan?.location || 'Your itinerary',
+        bbox: [
+            String(Math.min(...lons) - span),
+            String(Math.min(...lats) - span),
+            String(Math.max(...lons) + span),
+            String(Math.max(...lats) + span),
+        ],
+        stops,
+    };
+}
+
+/**
+ * How far the drawn route runs, in kilometres.
+ *
+ * Great-circle distance between consecutive stops, summed. This measures the
+ * dashed line the map actually draws, not a walked path -- the same promise
+ * `routeData` makes. A routing service would give real walking distance and a
+ * different number.
+ */
+export function routeDistanceKm(stops: ItineraryStop[]): number {
+    const radians = (degrees: number) => (degrees * Math.PI) / 180;
+    const earthRadiusKm = 6371;
+
+    return stops.slice(1).reduce((total, stop, index) => {
+        const previous = stops[index];
+
+        const deltaLat = radians(stop.lat - previous.lat);
+        const deltaLon = radians(stop.lon - previous.lon);
+
+        const a =
+            Math.sin(deltaLat / 2) ** 2 +
+            Math.cos(radians(previous.lat)) *
+                Math.cos(radians(stop.lat)) *
+                Math.sin(deltaLon / 2) ** 2;
+
+        return total + 2 * earthRadiusKm * Math.asin(Math.sqrt(a));
+    }, 0);
 }

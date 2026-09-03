@@ -1,7 +1,9 @@
-# Auth Module
+# Wayfinder Auth Module
 
-Authentication, social login (Google, GitHub), email verification, password reset, and admin user impersonation for Saucebase.
+Authentication, social login, email verification, password reset, and admin user
+impersonation for Wayfinder.
 
-This module is part of **[Saucebase](https://github.com/saucebase-dev/saucebase)**
+This copy-and-own module originated in the
+[Saucebase](https://github.com/saucebase-dev/saucebase) starter kit.
 
-**[Documentation →](https://saucebase-dev.github.io/docs/modules/auth)** 
+See the [project README](../../README.md) for Wayfinder setup and architecture.

@@ -1,44 +1,44 @@
 {
-  "name": "saucebase/auth",
-  "description": "Authentication module for Saucebase",
-  "type": "saucebase-module",
-  "license": "proprietary",
-  "version": "v2.6.0",
-  "authors": [
-    {
-      "name": "Saucebase",
-      "email": "hello@saucebase.dev"
-    }
-  ],
-  "extra": {
-    "saucebase": {
-      "frameworks": [
-        "vue",
-        "react"
-      ]
+    "name": "saucebase/auth",
+    "description": "Wayfinder authentication, social login, email verification, password reset, and impersonation module.",
+    "type": "saucebase-module",
+    "license": "MIT",
+    "version": "v2.6.0",
+    "authors": [
+        {
+            "name": "Saucebase",
+            "email": "hello@saucebase.dev"
+        }
+    ],
+    "extra": {
+        "saucebase": {
+            "frameworks": [
+                "vue",
+                "react"
+            ]
+        },
+        "laravel": {
+            "providers": [
+                "Modules\\Auth\\Providers\\AuthServiceProvider"
+            ],
+            "aliases": {}
+        }
     },
-    "laravel": {
-      "providers": [
-        "Modules\\Auth\\Providers\\AuthServiceProvider"
-      ],
-      "aliases": {}
-    }
-  },
-  "autoload": {
-    "psr-4": {
-      "Modules\\Auth\\": "src/",
-      "Modules\\Auth\\Database\\Factories\\": "database/factories/",
-      "Modules\\Auth\\Database\\Seeders\\": "database/seeders/"
-    }
-  },
-  "autoload-dev": {
-    "psr-4": {
-      "Modules\\Auth\\Tests\\": "tests/"
-    }
-  },
-  "require": {
-    "laravel/socialite": "^5.30.1",
-    "stechstudio/filament-impersonate": "^5.6"
-  },
-  "minimum-stability": "stable"
+    "autoload": {
+        "psr-4": {
+            "Modules\\Auth\\": "src/",
+            "Modules\\Auth\\Database\\Factories\\": "database/factories/",
+            "Modules\\Auth\\Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Modules\\Auth\\Tests\\": "tests/"
+        }
+    },
+    "require": {
+        "laravel/socialite": "^5.30.1",
+        "stechstudio/filament-impersonate": "^5.6"
+    },
+    "minimum-stability": "stable"
 }
