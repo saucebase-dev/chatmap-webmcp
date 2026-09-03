@@ -157,7 +157,7 @@ const planningTools = [
                             href="https://webmcp.devpost.com/"
                             target="_blank"
                             rel="noreferrer"
-                            class="border-primary/20 bg-primary/8 text-primary hover:bg-primary/12 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold tracking-wide transition-colors sm:text-sm"
+                            class="border-primary/20 bg-primary/8 text-primary hover:bg-primary/12 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold tracking-wide transition-colors sm:text-sm"
                         >
                             <Sparkles class="size-4" aria-hidden="true" />
                             {{ $t('Built for the WebMCP Challenge') }}
@@ -244,7 +244,7 @@ const planningTools = [
                                         />
                                     </div>
                                     <div
-                                        class="text-muted-foreground flex items-center gap-2 text-xs font-medium"
+                                        class="text-muted-foreground flex items-center gap-2 text-sm font-medium"
                                     >
                                         <MapPin
                                             class="text-primary size-3.5"
@@ -282,12 +282,12 @@ const planningTools = [
                                             </div>
                                             <div class="min-w-0">
                                                 <p
-                                                    class="text-xs font-semibold tracking-wide uppercase"
+                                                    class="text-sm font-semibold tracking-wide uppercase"
                                                 >
                                                     {{ $t('Wayfinder') }}
                                                 </p>
                                                 <p
-                                                    class="text-muted-foreground mt-1 text-xs leading-relaxed"
+                                                    class="text-muted-foreground mt-1 text-sm leading-relaxed"
                                                 >
                                                     {{
                                                         $t(
@@ -316,7 +316,7 @@ const planningTools = [
                                                 </span>
                                             </div>
                                             <ol
-                                                class="text-muted-foreground mt-3 flex flex-col gap-2.5 text-xs"
+                                                class="text-muted-foreground mt-3 flex flex-col gap-2.5 text-sm"
                                             >
                                                 <li class="flex gap-2">
                                                     <span
@@ -416,7 +416,7 @@ const planningTools = [
                                             class="bg-secondary/15 absolute -right-10 bottom-0 h-44 w-40 rounded-tl-[5rem]"
                                         />
                                         <div
-                                            class="bg-card/95 absolute top-4 left-4 flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold shadow-md"
+                                            class="bg-card/95 absolute top-4 left-4 flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold shadow-md"
                                         >
                                             <Route
                                                 class="text-primary size-3.5"
@@ -441,17 +441,17 @@ const planningTools = [
                                             />
                                         </svg>
                                         <div
-                                            class="bg-primary text-primary-foreground absolute top-[28%] left-[23%] flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-white text-xs font-bold shadow-lg dark:border-slate-800"
+                                            class="bg-primary text-primary-foreground absolute top-[28%] left-[23%] flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-white text-sm font-bold shadow-lg dark:border-slate-800"
                                         >
                                             1
                                         </div>
                                         <div
-                                            class="bg-secondary text-secondary-foreground absolute top-[51%] left-[76%] flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-white text-xs font-bold shadow-lg dark:border-slate-800"
+                                            class="bg-secondary text-secondary-foreground absolute top-[51%] left-[76%] flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-white text-sm font-bold shadow-lg dark:border-slate-800"
                                         >
                                             2
                                         </div>
                                         <div
-                                            class="bg-primary text-primary-foreground absolute top-[84%] left-[57%] flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-white text-xs font-bold shadow-lg dark:border-slate-800"
+                                            class="bg-primary text-primary-foreground absolute top-[84%] left-[57%] flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-white text-sm font-bold shadow-lg dark:border-slate-800"
                                         >
                                             3
                                         </div>
@@ -464,7 +464,7 @@ const planningTools = [
                                                 {{ $t('Map context') }}
                                             </p>
                                             <p
-                                                class="text-muted-foreground mt-1 text-xs"
+                                                class="text-muted-foreground mt-1 text-sm"
                                             >
                                                 {{
                                                     $t(
@@ -479,7 +479,7 @@ const planningTools = [
                         </div>
 
                         <div
-                            class="border-primary/20 bg-card absolute -right-3 -bottom-5 flex items-center gap-2 rounded-full border px-4 py-2.5 text-xs font-semibold shadow-xl sm:right-5"
+                            class="border-primary/20 bg-card absolute -right-3 -bottom-5 flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold shadow-xl sm:right-5"
                         >
                             <span class="relative flex size-2">
                                 <span
@@ -536,7 +536,7 @@ const planningTools = [
                                 />
                             </div>
                             <p
-                                class="text-muted-foreground mt-8 text-xs font-bold tracking-[0.16em] uppercase"
+                                class="text-muted-foreground mt-8 text-sm font-bold tracking-[0.16em] uppercase"
                             >
                                 {{ $t(example.eyebrow) }}
                             </p>
@@ -549,13 +549,13 @@ const planningTools = [
                                 “{{ $t(example.prompt) }}”
                             </p>
                             <ul
-                                class="mt-5 flex flex-wrap gap-2"
+                                class="mt-5 mb-2 flex flex-wrap gap-2"
                                 :aria-label="$t('Trip constraints')"
                             >
                                 <li
                                     v-for="tag in example.tags"
                                     :key="tag"
-                                    class="border-primary/15 bg-primary/6 text-primary rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                                    class="border-primary bg-primary/5 text-sm text-primary rounded-full border px-2.5 py-1 mb-1 font-semibold"
                                 >
                                     {{ $t(tag) }}
                                 </li>
@@ -563,7 +563,7 @@ const planningTools = [
                             <div
                                 class="border-border/70 mt-auto flex items-end justify-between gap-3 border-t pt-5"
                             >
-                                <p class="text-xs leading-relaxed font-medium">
+                                <p class="text-sm leading-relaxed font-medium">
                                     {{ $t(example.result) }}
                                 </p>
                                 <ArrowRight
@@ -621,7 +621,7 @@ const planningTools = [
                                 />
                             </div>
                             <p
-                                class="text-muted-foreground mt-7 font-mono text-xs font-bold tracking-widest"
+                                class="text-muted-foreground mt-7 font-mono text-sm font-bold tracking-widest"
                             >
                                 {{ step.number }}
                             </p>
@@ -677,17 +677,17 @@ const planningTools = [
                             </p>
                             <div class="mt-8 flex flex-wrap gap-3">
                                 <span
-                                    class="border-background/15 bg-background/8 rounded-full border px-3 py-1.5 font-mono text-xs"
+                                    class="border-background/15 bg-background/8 rounded-full border px-3 py-1.5 font-mono text-sm"
                                 >
                                     {{ $t('18 imperative tools') }}
                                 </span>
                                 <span
-                                    class="border-background/15 bg-background/8 rounded-full border px-3 py-1.5 font-mono text-xs"
+                                    class="border-background/15 bg-background/8 rounded-full border px-3 py-1.5 font-mono text-sm"
                                 >
                                     {{ $t('Phase-aware') }}
                                 </span>
                                 <span
-                                    class="border-background/15 bg-background/8 rounded-full border px-3 py-1.5 font-mono text-xs"
+                                    class="border-background/15 bg-background/8 rounded-full border px-3 py-1.5 font-mono text-sm"
                                 >
                                     {{ $t('User-controlled') }}
                                 </span>
@@ -724,7 +724,7 @@ const planningTools = [
                                     <code
                                         v-for="tool in guestTools"
                                         :key="tool"
-                                        class="border-background/10 bg-background/8 rounded-lg border px-3 py-2 text-xs"
+                                        class="border-background/10 bg-background/8 rounded-lg border px-3 py-2 text-sm"
                                     >
                                         {{ tool }}
                                     </code>
@@ -771,12 +771,12 @@ const planningTools = [
                                     <code
                                         v-for="tool in planningTools"
                                         :key="tool"
-                                        class="border-background/10 bg-background/8 truncate rounded-lg border px-3 py-2 text-xs"
+                                        class="border-background/10 bg-background/8 truncate rounded-lg border px-3 py-2 text-sm"
                                     >
                                         {{ tool }}
                                     </code>
                                     <span
-                                        class="text-background/60 flex items-center px-3 py-2 font-mono text-xs"
+                                        class="text-background/60 flex items-center px-3 py-2 font-mono text-sm"
                                     >
                                         {{ $t('+ 11 more') }}
                                     </span>
