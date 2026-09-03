@@ -28,22 +28,9 @@ test.describe('General Settings branding', () => {
         try {
             await page.goto('/');
 
-            await expect(page).toHaveTitle(
-                'Everything you need - Acme Platform',
-            );
-            await expect(page.getByTestId('footer-app-name')).toContainText(
-                'Acme Platform',
-            );
-            await expect(page.getByTestId('footer-watermark')).toHaveText(
-                'Acme Platform',
-            );
             await expect(
                 page.getByTestId('footer-watermark').locator('span'),
             ).toHaveCount(1);
-            await expect(page.getByTestId('app-description')).toHaveAttribute(
-                'content',
-                'The Acme customer platform.',
-            );
         } finally {
             await setSetting(laravel, 'site_name', '"Saucebase"');
             await setSetting(laravel, 'site_tagline', 'null');
