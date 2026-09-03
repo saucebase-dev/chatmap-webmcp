@@ -266,7 +266,7 @@ const planningTools = [
                                         >
                                             {{
                                                 $t(
-                                                    'A rainy Sunday in Porto with two kids, museums and somewhere good for lunch.',
+                                                    'A rainy Sunday in Porto with two kids.',
                                                 )
                                             }}
                                         </div>
@@ -291,7 +291,7 @@ const planningTools = [
                                                 >
                                                     {{
                                                         $t(
-                                                            'I’ll keep the walks short and build the day around indoor stops.',
+                                                            'I’ll keep the walks short and the stops indoors.',
                                                         )
                                                     }}
                                                 </p>
@@ -322,31 +322,19 @@ const planningTools = [
                                                     <span
                                                         class="bg-primary mt-1 size-1.5 shrink-0 rounded-full"
                                                     />
-                                                    {{
-                                                        $t(
-                                                            '10:00 · Interactive museum',
-                                                        )
-                                                    }}
+                                                    {{ $t('10:00 · Museum') }}
                                                 </li>
                                                 <li class="flex gap-2">
                                                     <span
                                                         class="bg-secondary mt-1 size-1.5 shrink-0 rounded-full"
                                                     />
-                                                    {{
-                                                        $t(
-                                                            '12:30 · Family-friendly café',
-                                                        )
-                                                    }}
+                                                    {{ $t('12:30 · Café') }}
                                                 </li>
                                                 <li class="flex gap-2">
                                                     <span
                                                         class="bg-primary mt-1 size-1.5 shrink-0 rounded-full"
                                                     />
-                                                    {{
-                                                        $t(
-                                                            '14:00 · Covered market',
-                                                        )
-                                                    }}
+                                                    {{ $t('14:00 · Market') }}
                                                 </li>
                                             </ol>
                                         </div>
@@ -446,7 +434,7 @@ const planningTools = [
                                             1
                                         </div>
                                         <div
-                                            class="bg-secondary text-secondary-foreground absolute top-[51%] left-[76%] flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-white text-sm font-bold shadow-lg dark:border-slate-800"
+                                            class="bg-secondary text-foreground absolute top-[51%] left-[76%] flex size-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-white text-sm font-bold shadow-lg dark:border-slate-800"
                                         >
                                             2
                                         </div>
@@ -468,7 +456,7 @@ const planningTools = [
                                             >
                                                 {{
                                                     $t(
-                                                        'Your agent can read the area you are viewing.',
+                                                        'Your agent reads this view.',
                                                     )
                                                 }}
                                             </p>
@@ -479,7 +467,7 @@ const planningTools = [
                         </div>
 
                         <div
-                            class="border-primary/20 bg-card absolute -right-3 -bottom-5 flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold shadow-xl sm:right-5"
+                            class="border-primary/20 bg-card absolute -bottom-12 left-1/2 flex -translate-x-1/2 items-center gap-2.5 rounded-full border px-6 py-3.5 text-base font-semibold shadow-xl"
                         >
                             <span class="relative flex size-2">
                                 <span
@@ -555,7 +543,7 @@ const planningTools = [
                                 <li
                                     v-for="tag in example.tags"
                                     :key="tag"
-                                    class="border-primary bg-primary/5 text-sm text-primary rounded-full border px-2.5 py-1 mb-1 font-semibold"
+                                    class="border-primary bg-primary/5 text-primary mb-1 rounded-full border px-2.5 py-1 text-sm font-semibold"
                                 >
                                     {{ $t(tag) }}
                                 </li>
@@ -599,20 +587,20 @@ const planningTools = [
                         </h2>
                     </div>
 
-                    <ol class="mt-16 grid gap-10 md:grid-cols-3 md:gap-6">
+                    <ol class="mt-16 grid gap-10 md:grid-cols-3 md:gap-16">
                         <li
                             v-for="(step, index) in workflow"
                             :key="step.id"
-                            class="relative"
+                            class="relative text-center"
                             :data-testid="`workflow-${step.id}`"
                         >
                             <div
                                 v-if="index < workflow.length - 1"
-                                class="border-border absolute top-7 left-[4.5rem] hidden w-[calc(100%-4rem)] border-t-2 border-dashed md:block"
+                                class="border-border absolute top-10 left-[calc(50%+2.5rem)] hidden w-[calc(100%-1rem)] border-t-2 border-dashed md:block"
                                 aria-hidden="true"
                             />
                             <div
-                                class="bg-card border-border relative z-10 flex size-14 items-center justify-center rounded-2xl border shadow-sm"
+                                class="bg-card border-border relative z-10 mx-auto flex size-14 items-center justify-center rounded-2xl border shadow-sm"
                             >
                                 <component
                                     :is="step.icon"
@@ -629,7 +617,7 @@ const planningTools = [
                                 {{ $t(step.title) }}
                             </h3>
                             <p
-                                class="text-muted-foreground mt-3 max-w-sm text-sm leading-relaxed"
+                                class="text-muted-foreground mx-auto mt-3 max-w-sm text-sm leading-relaxed"
                             >
                                 {{ $t(step.description) }}
                             </p>
