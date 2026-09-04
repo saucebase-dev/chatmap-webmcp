@@ -56,7 +56,7 @@ class SaveItinerary implements Tool
 
     public function description(): Stringable|string
     {
-        return 'Save the visitor\'s itinerary: the stops of their day in the order they will visit them. Call this when they ask for a day plan, an itinerary, a route, an order to do things in, or what to do first. Always pass every stop, because this replaces the whole list. Prefer places you have already found with find_places, and write each place as a name a map can find, e.g. "Livraria Lello, Porto, Portugal". For a marker with no real name of its own, such as "Viewpoint 2", pass that marker\'s lat and lon as well, because no name will find it. Every stop must be a different place.';
+        return 'Save the visitor\'s itinerary: the stops of their day in the order they will visit them. Call this when they ask for a day plan, an itinerary, a route, an order to do things in, or what to do first. Always pass every stop, because this replaces the whole list. Prefer places you have already found with find_places, and write each place as a name a map can find, e.g. "Livraria Lello, Porto, Portugal". For a marker with no real name of its own, such as "Viewpoint 2", pass that marker\'s lat and lon as well, because no name will find it. Every stop must be a different place. Order the stops as one continuous route: start at one end of the area and work across it, so the visitor never walks back past somewhere they have already been. Times follow the route, not the other way round -- when a meal has to fall at a certain hour, choose somewhere to eat between the stops on either side of it rather than sending them back across town.';
     }
 
     /**

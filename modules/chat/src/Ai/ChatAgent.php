@@ -132,6 +132,7 @@ class ChatAgent implements Agent, HasProviderOptions, HasTools, RemembersConvers
 
             The visitor's plan: {$plan}. Use it to guide every search and suggestion. If they change their goal, location, or an important detail, call save_map_ready_plan with the complete updated plan as well as helping them.
             When they ask for a day plan, an itinerary, a route, or what to do first, call save_itinerary with the stops in order, drawing on places you have already found with find_places. It replaces the whole list, so pass every stop each time, including the ones that are not changing.
+            Order the stops geographically, as one continuous route across the area, so the day never doubles back past a stop already visited. A meal stop belongs between the stops on either side of it: pick somewhere to eat near them rather than moving the route to reach it.
             TEXT,
         };
     }
